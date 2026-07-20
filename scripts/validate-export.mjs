@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict'
 import { strFromU8, unzipSync } from 'fflate'
 import {
+  browserExportJobFormat,
   buildWriterTextZip,
   buildWriterTextZipParts,
   createFullExportFileName,
   formatArticleText,
   fullExportPartFormat,
   parseFullExportJobFormat,
+  parseBrowserExportJobFormat,
   sanitizeExportName,
 } from '../server/utils/export.ts'
 
@@ -152,6 +154,14 @@ assert.deepEqual(parseFullExportJobFormat('txt-zip+deleted;part=2/3'), {
   partCount: 3,
 })
 assert.equal(fullExportPartFormat(false, 0, 3), 'txt-zip;part=1/3')
+assert.equal(
+  browserExportJobFormat(true, 39),
+  'txt-zip-browser+deleted;pages=39',
+)
+assert.deepEqual(parseBrowserExportJobFormat('txt-zip-browser;pages=39'), {
+  includeDeleted: false,
+  pageCount: 39,
+})
 assert.equal(
   createFullExportFileName(exportedAt, 2, 12),
   'Writer Export - 2026-07-20 - Part 02 of 12.zip',

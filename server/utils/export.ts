@@ -6,6 +6,7 @@ const EXPORT_VERSION = 1
 const MAX_EXPORT_NAME_LENGTH = 120
 const ARTICLE_PAGE_SIZE = 200
 const INITIAL_EXPORT_PART_SOURCE_BYTES = 10_000_000
+export const CLIENT_EXPORT_PAGE_SOURCE_BYTES = 3_000_000
 export const MAX_EXPORT_PART_BYTES = 4_000_000
 const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i
 // C0 controls are intentionally rejected because archive paths must be portable.
@@ -107,6 +108,12 @@ export interface WriterExportPartPlan {
 export interface WriterExportPlan {
   parts: WriterExportPartPlan[]
   pathContext: WriterExportPathContext
+  articleCount: number
+}
+
+export interface BrowserExportJobFormat {
+  includeDeleted: boolean
+  pageCount: number
 }
 
 /**
@@ -473,7 +480,7 @@ export async function loadWriterExportData(
 /** Builds a multipart plan without loading article bodies or creating ZIPs. */
 export async function loadWriterExportPlan(
   event: H3Event,
-  options: { includeDeleted: boolean },
+  options: { includeDeleted: boolean; maximumEstimatedBytes?: number },
 ): Promise<WriterExportPlan> {
   const client = getDatabaseClient(event)
   const activeFolderPredicate = options.includeDeleted ? '' : 'AND f.deleted = 0'
@@ -532,7 +539,8 @@ export async function loadWriterExportPlan(
   for (const article of articles) {
     if (
       articleCount > 0 &&
-      estimatedBytes + article.estimatedBytes > INITIAL_EXPORT_PART_SOURCE_BYTES
+      estimatedBytes + article.estimatedBytes >
+        (options.maximumEstimatedBytes ?? INITIAL_EXPORT_PART_SOURCE_BYTES)
     ) {
       parts.push({ articleOffset, articleCount, estimatedBytes })
       articleOffset += articleCount
@@ -551,6 +559,7 @@ export async function loadWriterExportPlan(
   return {
     parts,
     pathContext: createWriterExportPathContext({ folders, articles }),
+    articleCount: articles.length,
   }
 }
 
@@ -650,6 +659,32 @@ export function parseFullExportJobFormat(format: string): FullExportJobFormat {
 
 export function includeDeletedFromExportFormat(format: string): boolean {
   return parseFullExportJobFormat(format).includeDeleted
+}
+
+export function browserExportJobFormat(
+  includeDeleted: boolean,
+  pageCount: number,
+): string {
+  return `txt-zip-browser${includeDeleted ? '+deleted' : ''};pages=${pageCount}`
+}
+
+export function parseBrowserExportJobFormat(
+  format: string,
+): BrowserExportJobFormat {
+  const match = /^(txt-zip-browser(?:\+deleted)?);pages=(\d+)$/.exec(format)
+  const pageCount = Number(match?.[2])
+
+  if (!match || !Number.isInteger(pageCount) || pageCount < 1) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'This browser export job is not supported.',
+    })
+  }
+
+  return {
+    includeDeleted: match[1] === 'txt-zip-browser+deleted',
+    pageCount,
+  }
 }
 
 export function createFullExportFileName(

@@ -11,64 +11,50 @@ const exportRequestSchema = z
 export default defineProtectedEventHandler(async (event, session) => {
   const { includeDeleted } = await validateBody(event, exportRequestSchema)
   const createdAt = Date.now()
-  const exportPlan = await loadWriterExportPlan(event, { includeDeleted })
-  const jobs = exportPlan.parts.map((part, partIndex) => ({
+  const exportPlan = await loadWriterExportPlan(event, {
+    includeDeleted,
+    maximumEstimatedBytes: CLIENT_EXPORT_PAGE_SOURCE_BYTES,
+  })
+  const job = {
     id: randomUUID(),
     status: 'ready' as const,
-    fileName: createFullExportFileName(
-      new Date(createdAt),
-      partIndex + 1,
-      exportPlan.parts.length,
-    ),
-    format: fullExportPartFormat(
+    fileName: createFullExportFileName(new Date(createdAt)),
+    format: browserExportJobFormat(
       includeDeleted,
-      partIndex,
       exportPlan.parts.length,
     ),
     createdAt,
-    estimatedBytes: part.estimatedBytes,
-  }))
+  }
 
   await withDatabaseWriteTransaction(event, async (transaction) => {
-    for (const job of jobs) {
-      await transaction.execute({
-        sql: `
-          INSERT INTO app_export_job (
-            id,
-            user_id,
-            format,
-            status,
-            file_name,
-            error,
-            created_at,
-            completed_at
-          )
-          VALUES (?, ?, ?, 'ready', ?, NULL, ?, NULL)
-        `,
-        args: [
-          job.id,
-          session.user.id,
-          job.format,
-          job.fileName,
-          createdAt,
-        ],
-      })
-    }
+    await transaction.execute({
+      sql: `
+        INSERT INTO app_export_job (
+          id,
+          user_id,
+          format,
+          status,
+          file_name,
+          error,
+          created_at,
+          completed_at
+        )
+        VALUES (?, ?, ?, 'ready', ?, NULL, ?, NULL)
+      `,
+      args: [job.id, session.user.id, job.format, job.fileName, createdAt],
+    })
 
     await writeAuditLog(
       event,
       {
         action: 'export.job.create',
         entityType: 'app_export_job',
-        entityId: jobs[0]?.id ?? null,
+        entityId: job.id,
         metadata: {
-          format: 'txt-zip-parts',
+          format: 'txt-zip-browser',
           includeDeleted,
-          partCount: jobs.length,
-          totalEstimatedSourceBytes: jobs.reduce(
-            (total, job) => total + job.estimatedBytes,
-            0,
-          ),
+          pageCount: exportPlan.parts.length,
+          articleCount: exportPlan.articleCount,
         },
       },
       transaction,
@@ -77,16 +63,13 @@ export default defineProtectedEventHandler(async (event, session) => {
 
   setCompatibleResponseStatus(event, 201)
 
-  const responseParts = jobs.map(({ format: _format, estimatedBytes, ...job }) => ({
-    job,
-    estimatedBytes,
-    downloadUrl: `/api/export/${encodeURIComponent(job.id)}/download`,
-  }))
-  const firstPart = responseParts[0]
-
   return {
-    job: firstPart?.job,
-    downloadUrl: firstPart?.downloadUrl,
-    parts: responseParts,
+    job: {
+      id: job.id,
+      status: job.status,
+      fileName: job.fileName,
+      createdAt: job.createdAt,
+    },
+    pageCount: exportPlan.parts.length,
   }
 })
