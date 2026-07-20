@@ -24,33 +24,58 @@ export default defineProtectedEventHandler(async (event, session) => {
   }
 
   const jobFormat = parseBrowserExportJobFormat(String(job.format))
-  const exportPlan = await loadWriterExportPlan(event, {
+  const snapshot = jobFormat.snapshot
+
+  if (!snapshot) {
+    throw createError({
+      statusCode: 409,
+      statusMessage:
+        'This backup was prepared by an older version. Please create a new backup.',
+    })
+  }
+
+  const pageArticleCount = snapshot.pageArticleCounts[page - 1]
+
+  if (pageArticleCount === undefined) {
+    throw createError({ statusCode: 404, statusMessage: 'Export page not found.' })
+  }
+
+  const articleOffset = snapshot.pageArticleCounts
+    .slice(0, page - 1)
+    .reduce((total, count) => total + count, 0)
+  const articleIds = snapshot.articleIds.slice(
+    articleOffset,
+    articleOffset + pageArticleCount,
+  )
+
+  const data = await loadWriterExportData(event, {
     includeDeleted: jobFormat.includeDeleted,
-    maximumEstimatedBytes: CLIENT_EXPORT_PAGE_SOURCE_BYTES,
+    articleIds,
   })
 
-  if (jobFormat.pageCount !== exportPlan.parts.length) {
+  if (data.articles.length !== articleIds.length) {
     throw createError({
       statusCode: 409,
       statusMessage: 'The archive changed. Please create a new backup.',
     })
   }
 
-  const part = exportPlan.parts[page - 1]
+  const pathContext = createWriterExportPagePathContext(data, {
+    articleOffset,
+    folderArticleCounts: snapshot.folderArticleCounts,
+  })
 
-  if (!part) {
-    throw createError({ statusCode: 404, statusMessage: 'Export page not found.' })
+  if (pathContext.articlePaths.size !== data.articles.length) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'The archive changed. Please create a new backup.',
+    })
   }
 
-  const data = await loadWriterExportData(event, {
-    includeDeleted: jobFormat.includeDeleted,
-    articleOffset: part.articleOffset,
-    articleLimit: part.articleCount,
-  })
   const metadata = buildExportMetadata(data, {
     includeDeleted: jobFormat.includeDeleted,
     exportedAt: new Date(Number(job.created_at)),
-    pathContext: exportPlan.pathContext,
+    pathContext,
   })
   const paths = new Map(
     metadata.articles.map((article) => [article.id, article.path]),
@@ -76,7 +101,7 @@ export default defineProtectedEventHandler(async (event, session) => {
     exportInfo: {
       ...metadata.exportInfo,
       folderCount: data.folders.length,
-      articleCount: exportPlan.articleCount,
+      articleCount: snapshot.articleIds.length,
       categoryCount: data.categories.length,
     },
     folders: page === 1 ? metadata.folders : [],

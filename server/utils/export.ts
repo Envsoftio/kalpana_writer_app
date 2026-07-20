@@ -111,11 +111,25 @@ export interface WriterExportPlan {
   parts: WriterExportPartPlan[]
   pathContext: WriterExportPathContext
   articleCount: number
+  articleIds: string[]
+  folderArticleCounts: WriterExportFolderArticleCount[]
+}
+
+export interface WriterExportFolderArticleCount {
+  folderId: string
+  articleCount: number
+}
+
+export interface BrowserExportSnapshot {
+  pageArticleCounts: number[]
+  articleIds: string[]
+  folderArticleCounts: WriterExportFolderArticleCount[]
 }
 
 export interface BrowserExportJobFormat {
   includeDeleted: boolean
   pageCount: number
+  snapshot: BrowserExportSnapshot | null
 }
 
 /**
@@ -343,6 +357,7 @@ export async function loadWriterExportData(
     folderId?: string
     articleOffset?: number
     articleLimit?: number
+    articleIds?: string[]
   },
 ): Promise<WriterExportData> {
   const client = getDatabaseClient(event)
@@ -386,58 +401,52 @@ export async function loadWriterExportData(
   }
 
   const articles: WriterArticleExport[] = []
-  let offset = options.articleOffset ?? 0
-  let remaining = options.articleLimit ?? Number.POSITIVE_INFINITY
+  const preparedArticleIds = options.articleIds
 
-  while (remaining > 0) {
-    const pageSize = Math.min(ARTICLE_PAGE_SIZE, remaining)
-    const articleResult = await client.execute({
-      sql: `
-        SELECT
-          a.id,
-          a.title,
-          a.content,
-          a.summary,
-          a.count,
-          a.extension,
-          a.updateTime,
-          a.createTime,
-          a.folderId,
-          f.name AS folderName,
-          a.categoryId,
-          a.rank,
-          a.deleted,
-          a.deletedTime,
-          a.orderKey
-        FROM Article AS a
-        INNER JOIN Folder AS f ON f.id = a.folderId
-        WHERE 1 = 1
-          ${folderPredicate}
-          ${activeFolderPredicate}
-          ${options.includeDeleted ? '' : 'AND a.deleted = 0'}
-        ORDER BY
-          f.rank ASC,
-          f.name COLLATE NOCASE ASC,
-          f.id ASC,
-          a.rank ASC,
-          CASE WHEN a.orderKey IS NULL OR a.orderKey = '' THEN 1 ELSE 0 END ASC,
-          a.orderKey COLLATE NOCASE ASC,
-          a.title COLLATE NOCASE ASC,
-          a.createTime ASC,
-          a.id ASC
-        LIMIT ? OFFSET ?
-      `,
-      args: [...folderArgs, pageSize, offset],
-    })
+  if (preparedArticleIds) {
+    await appendArticlesById(preparedArticleIds)
+  } else {
+    let offset = options.articleOffset ?? 0
+    let remaining = options.articleLimit ?? Number.POSITIVE_INFINITY
 
-    articles.push(...articleResult.rows.map(mapArticleRow))
-    remaining -= articleResult.rows.length
+    while (remaining > 0) {
+      const pageSize = Math.min(ARTICLE_PAGE_SIZE, remaining)
+      const articleIdResult = await client.execute({
+        sql: `
+          SELECT a.id
+          FROM Article AS a
+          INNER JOIN Folder AS f ON f.id = a.folderId
+          WHERE 1 = 1
+            ${folderPredicate}
+            ${activeFolderPredicate}
+            ${options.includeDeleted ? '' : 'AND a.deleted = 0'}
+          ORDER BY
+            f.rank ASC,
+            f.name COLLATE NOCASE ASC,
+            f.id ASC,
+            a.rank ASC,
+            CASE WHEN a.orderKey IS NULL OR a.orderKey = '' THEN 1 ELSE 0 END ASC,
+            a.orderKey COLLATE NOCASE ASC,
+            a.title COLLATE NOCASE ASC,
+            a.createTime ASC,
+            a.id ASC
+          LIMIT ? OFFSET ?
+        `,
+        args: [...folderArgs, pageSize, offset],
+      })
+      const articleIds = articleIdResult.rows.map((row) =>
+        requiredString(row.id),
+      )
 
-    if (articleResult.rows.length < pageSize) {
-      break
+      await appendArticlesById(articleIds)
+      remaining -= articleIds.length
+
+      if (articleIds.length < pageSize) {
+        break
+      }
+
+      offset += pageSize
     }
-
-    offset += pageSize
   }
 
   const categoryResult = await client.execute({
@@ -476,6 +485,53 @@ export async function loadWriterExportData(
     folders,
     articles,
     categories: categoryResult.rows.map(mapCategoryRow),
+  }
+
+  async function appendArticlesById(articleIds: string[]): Promise<void> {
+    for (let start = 0; start < articleIds.length; start += ARTICLE_PAGE_SIZE) {
+      const idBatch = articleIds.slice(start, start + ARTICLE_PAGE_SIZE)
+      const placeholders = idBatch.map(() => '?').join(', ')
+      const articleResult = await client.execute({
+        sql: `
+          SELECT
+            a.id,
+            a.title,
+            a.content,
+            a.summary,
+            a.count,
+            a.extension,
+            a.updateTime,
+            a.createTime,
+            a.folderId,
+            f.name AS folderName,
+            a.categoryId,
+            a.rank,
+            a.deleted,
+            a.deletedTime,
+            a.orderKey
+          FROM Article AS a
+          INNER JOIN Folder AS f ON f.id = a.folderId
+          WHERE 1 = 1
+            ${folderPredicate}
+            ${activeFolderPredicate}
+            ${options.includeDeleted ? '' : 'AND a.deleted = 0'}
+            AND a.id IN (${placeholders})
+        `,
+        args: [...folderArgs, ...idBatch],
+      })
+      const articlesById = new Map(
+        articleResult.rows.map((row) => {
+          const article = mapArticleRow(row)
+          return [article.id, article] as const
+        }),
+      )
+
+      for (const articleId of idBatch) {
+        const article = articlesById.get(articleId)
+
+        if (article) articles.push(article)
+      }
+    }
   }
 }
 
@@ -562,7 +618,27 @@ export async function loadWriterExportPlan(
     parts,
     pathContext: createWriterExportPathContext({ folders, articles }),
     articleCount: articles.length,
+    articleIds: articles.map((article) => article.id),
+    folderArticleCounts: collectFolderArticleCounts(articles),
   }
+}
+
+function collectFolderArticleCounts(
+  articles: Array<Pick<WriterArticleExport, 'folderId'>>,
+): WriterExportFolderArticleCount[] {
+  const counts: WriterExportFolderArticleCount[] = []
+
+  for (const article of articles) {
+    const current = counts[counts.length - 1]
+
+    if (current?.folderId === article.folderId) {
+      current.articleCount += 1
+    } else {
+      counts.push({ folderId: article.folderId, articleCount: 1 })
+    }
+  }
+
+  return counts
 }
 
 /** Loads one article and applies the same active/deleted policy as ZIP export. */
@@ -665,28 +741,135 @@ export function includeDeletedFromExportFormat(format: string): boolean {
 
 export function browserExportJobFormat(
   includeDeleted: boolean,
-  pageCount: number,
+  plan: Pick<
+    WriterExportPlan,
+    'parts' | 'articleIds' | 'folderArticleCounts'
+  >,
 ): string {
-  return `txt-zip-browser${includeDeleted ? '+deleted' : ''};pages=${pageCount}`
+  const pageArticleCounts = plan.parts.map((part) => part.articleCount)
+  const snapshot = Buffer.from(
+    JSON.stringify({
+      v: 1,
+      p: pageArticleCounts,
+      i: plan.articleIds,
+      f: plan.folderArticleCounts.map(
+        ({ folderId, articleCount }) => [folderId, articleCount] as const,
+      ),
+    }),
+  ).toString('base64url')
+
+  return `txt-zip-browser${includeDeleted ? '+deleted' : ''};pages=${pageArticleCounts.length};snapshot=${snapshot}`
 }
 
 export function parseBrowserExportJobFormat(
   format: string,
 ): BrowserExportJobFormat {
-  const match = /^(txt-zip-browser(?:\+deleted)?);pages=(\d+)$/.exec(format)
+  const match =
+    /^(txt-zip-browser(?:\+deleted)?);pages=(\d+)(?:;snapshot=([A-Za-z0-9_-]+))?$/.exec(
+      format,
+    )
   const pageCount = Number(match?.[2])
 
   if (!match || !Number.isInteger(pageCount) || pageCount < 1) {
-    throw createError({
-      statusCode: 409,
-      statusMessage: 'This browser export job is not supported.',
+    throwUnsupportedBrowserExport()
+  }
+
+  const includeDeleted = match[1] === 'txt-zip-browser+deleted'
+  const encodedSnapshot = match[3]
+
+  if (!encodedSnapshot) {
+    return { includeDeleted, pageCount, snapshot: null }
+  }
+
+  let value: unknown
+
+  try {
+    value = JSON.parse(Buffer.from(encodedSnapshot, 'base64url').toString())
+  } catch {
+    throwUnsupportedBrowserExport()
+  }
+
+  if (!isRecord(value) || value.v !== 1) {
+    throwUnsupportedBrowserExport()
+  }
+
+  const pageArticleCounts = value.p
+  const articleIds = value.i
+  const serializedFolderCounts = value.f
+
+  if (
+    !Array.isArray(pageArticleCounts) ||
+    pageArticleCounts.length !== pageCount ||
+    !pageArticleCounts.every(
+      (count) => Number.isInteger(count) && Number(count) >= 0,
+    ) ||
+    !Array.isArray(articleIds) ||
+    !articleIds.every(isExportEntityId) ||
+    new Set(articleIds).size !== articleIds.length ||
+    !Array.isArray(serializedFolderCounts)
+  ) {
+    throwUnsupportedBrowserExport()
+  }
+
+  const totalArticleCount = pageArticleCounts.reduce<number>(
+    (total, count) => total + Number(count),
+    0,
+  )
+
+  if (
+    totalArticleCount !== articleIds.length ||
+    (pageArticleCounts.some((count) => Number(count) === 0) &&
+      !(pageCount === 1 && articleIds.length === 0))
+  ) {
+    throwUnsupportedBrowserExport()
+  }
+
+  const folderArticleCounts: WriterExportFolderArticleCount[] = []
+
+  for (const entry of serializedFolderCounts) {
+    if (
+      !Array.isArray(entry) ||
+      entry.length !== 2 ||
+      !isExportEntityId(entry[0]) ||
+      !Number.isInteger(entry[1]) ||
+      Number(entry[1]) < 1
+    ) {
+      throwUnsupportedBrowserExport()
+    }
+
+    folderArticleCounts.push({
+      folderId: entry[0],
+      articleCount: Number(entry[1]),
     })
   }
 
-  return {
-    includeDeleted: match[1] === 'txt-zip-browser+deleted',
-    pageCount,
+  if (
+    new Set(folderArticleCounts.map(({ folderId }) => folderId)).size !==
+      folderArticleCounts.length ||
+    folderArticleCounts.reduce(
+      (total, { articleCount }) => total + articleCount,
+      0,
+    ) !== articleIds.length
+  ) {
+    throwUnsupportedBrowserExport()
   }
+
+  return {
+    includeDeleted,
+    pageCount,
+    snapshot: {
+      pageArticleCounts: pageArticleCounts.map(Number),
+      articleIds,
+      folderArticleCounts,
+    },
+  }
+}
+
+function throwUnsupportedBrowserExport(): never {
+  throw createError({
+    statusCode: 409,
+    statusMessage: 'This browser export job is not supported.',
+  })
 }
 
 export function createFullExportFileName(
@@ -780,6 +963,60 @@ export function createWriterExportPathContext(
     const articleWidth = prefixWidth(articleCounts.get(article.folderId) ?? 0)
     const articleName = `${numericPrefix(articleIndex, articleWidth)} - ${sanitizeExportName(article.title)}.txt`
     articleIndexes.set(article.folderId, articleIndex + 1)
+    articlePaths.set(article.id, `${folderPath}/${articleName}`)
+  })
+
+  return { folderPaths, articlePaths }
+}
+
+/** Builds paths for one prepared browser page without reloading every title. */
+export function createWriterExportPagePathContext(
+  data: {
+    folders: Array<Pick<WriterFolderExport, 'id' | 'name'>>
+    articles: Array<Pick<WriterArticleExport, 'id' | 'title' | 'folderId'>>
+  },
+  options: {
+    articleOffset: number
+    folderArticleCounts: WriterExportFolderArticleCount[]
+  },
+): WriterExportPathContext {
+  const { folderPaths } = createWriterExportPathContext({
+    folders: data.folders,
+    articles: [],
+  })
+  const articlePaths = new Map<string, string>()
+  const folderRanges = new Map<
+    string,
+    { articleOffset: number; articleCount: number }
+  >()
+  let articleOffset = 0
+
+  for (const folder of options.folderArticleCounts) {
+    folderRanges.set(folder.folderId, {
+      articleOffset,
+      articleCount: folder.articleCount,
+    })
+    articleOffset += folder.articleCount
+  }
+
+  data.articles.forEach((article, pageArticleIndex) => {
+    const folderPath = folderPaths.get(article.folderId)
+    const folderRange = folderRanges.get(article.folderId)
+
+    if (!folderPath || !folderRange) return
+
+    const globalArticleIndex = options.articleOffset + pageArticleIndex
+    const folderArticleIndex = globalArticleIndex - folderRange.articleOffset
+
+    if (
+      folderArticleIndex < 0 ||
+      folderArticleIndex >= folderRange.articleCount
+    ) {
+      return
+    }
+
+    const articleWidth = prefixWidth(folderRange.articleCount)
+    const articleName = `${numericPrefix(folderArticleIndex, articleWidth)} - ${sanitizeExportName(article.title)}.txt`
     articlePaths.set(article.id, `${folderPath}/${articleName}`)
   })
 
@@ -946,6 +1183,14 @@ function nullableNumber(value: unknown): number | null {
 
 function booleanValue(value: unknown): boolean {
   return numericValue(value) !== 0
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isExportEntityId(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 128
 }
 
 function truncateCodePoints(value: string, maxLength: number): string {

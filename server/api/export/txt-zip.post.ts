@@ -19,10 +19,7 @@ export default defineProtectedEventHandler(async (event, session) => {
     id: randomUUID(),
     status: 'ready' as const,
     fileName: createFullExportFileName(new Date(createdAt)),
-    format: browserExportJobFormat(
-      includeDeleted,
-      exportPlan.parts.length,
-    ),
+    format: browserExportJobFormat(includeDeleted, exportPlan),
     createdAt,
   }
 

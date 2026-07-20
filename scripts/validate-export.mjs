@@ -5,6 +5,7 @@ import {
   buildWriterTextZip,
   buildWriterTextZipParts,
   createFullExportFileName,
+  createWriterExportPagePathContext,
   formatArticleText,
   fullExportPartFormat,
   parseFullExportJobFormat,
@@ -154,14 +155,44 @@ assert.deepEqual(parseFullExportJobFormat('txt-zip+deleted;part=2/3'), {
   partCount: 3,
 })
 assert.equal(fullExportPartFormat(false, 0, 3), 'txt-zip;part=1/3')
-assert.equal(
-  browserExportJobFormat(true, 39),
-  'txt-zip-browser+deleted;pages=39',
-)
+const browserPlan = {
+  parts: [
+    { articleOffset: 0, articleCount: 2, estimatedBytes: 1_000 },
+    { articleOffset: 2, articleCount: 1, estimatedBytes: 500 },
+  ],
+  articleIds: articles.map((article) => article.id),
+  folderArticleCounts: [
+    { folderId: 'folder-1', articleCount: 2 },
+    { folderId: 'folder-2', articleCount: 1 },
+  ],
+}
+const browserFormat = browserExportJobFormat(true, browserPlan)
+assert.match(browserFormat, /^txt-zip-browser\+deleted;pages=2;snapshot=/)
+assert.deepEqual(parseBrowserExportJobFormat(browserFormat), {
+  includeDeleted: true,
+  pageCount: 2,
+  snapshot: {
+    pageArticleCounts: [2, 1],
+    articleIds: articles.map((article) => article.id),
+    folderArticleCounts: browserPlan.folderArticleCounts,
+  },
+})
 assert.deepEqual(parseBrowserExportJobFormat('txt-zip-browser;pages=39'), {
   includeDeleted: false,
   pageCount: 39,
+  snapshot: null,
 })
+const pagePathContext = createWriterExportPagePathContext(
+  { folders, articles: [articles[2]] },
+  {
+    articleOffset: 2,
+    folderArticleCounts: browserPlan.folderArticleCounts,
+  },
+)
+assert.equal(
+  pagePathContext.articlePaths.get('article-3'),
+  expectedArticlePaths[2],
+)
 assert.equal(
   createFullExportFileName(exportedAt, 2, 12),
   'Writer Export - 2026-07-20 - Part 02 of 12.zip',
