@@ -5,10 +5,21 @@ useHead({ title: 'Sign in · Writer Archive' })
 
 const email = ref('')
 const password = ref('')
+const showPassword = ref(false)
 const loading = ref(false)
 const errorMessage = ref('')
 const route = useRoute()
 const { fetch: refreshSession, loggedIn } = useUserSession()
+
+const passwordFieldType = computed(() =>
+  showPassword.value ? 'text' : 'password',
+)
+const passwordToggleIcon = computed(() =>
+  showPassword.value ? 'i-lucide-eye-off' : 'i-lucide-eye',
+)
+const passwordToggleLabel = computed(() =>
+  showPassword.value ? 'Hide password' : 'Show password',
+)
 
 function getSafeRedirect(): string {
   const redirect = route.query.redirect
@@ -91,12 +102,25 @@ async function login() {
           <span>Password</span>
           <UInput
             v-model="password"
-            type="password"
+            :type="passwordFieldType"
             autocomplete="current-password"
             icon="i-lucide-lock-keyhole"
             size="lg"
             required
-          />
+          >
+            <template #trailing>
+              <UButton
+                type="button"
+                :icon="passwordToggleIcon"
+                color="neutral"
+                variant="ghost"
+                size="xs"
+                :aria-label="passwordToggleLabel"
+                :aria-pressed="showPassword"
+                @click="showPassword = !showPassword"
+              />
+            </template>
+          </UInput>
         </label>
 
         <p v-if="errorMessage" class="form-error" role="alert">
