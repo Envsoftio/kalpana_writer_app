@@ -1,7 +1,7 @@
 export default defineNuxtConfig({
   compatibilityDate: '2026-07-20',
   css: ['~/assets/css/main.css'],
-  devtools: { enabled: true },
+  devtools: { enabled: process.env.NODE_ENV !== 'production' },
   modules: ['nuxt-auth-utils', '@nuxt/ui', '@nuxt/eslint'],
   nitro: {
     preset: 'netlify',

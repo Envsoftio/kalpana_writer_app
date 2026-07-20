@@ -1,0 +1,47 @@
+export function formatWriterDate(value: unknown, withTime = false): string {
+  const date = toWriterDate(value)
+
+  if (!date) return 'Unknown'
+
+  return new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    ...(withTime ? { hour: 'numeric', minute: '2-digit' } : {}),
+  }).format(date)
+}
+
+export function toWriterDate(value: unknown): Date | null {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric) || numeric <= 0) return null
+  const milliseconds = numeric < 10_000_000_000 ? numeric * 1000 : numeric
+  const date = new Date(milliseconds)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+export function isDeleted(value: unknown): boolean {
+  return value === true || value === 1 || value === '1'
+}
+
+export function countWords(value: string): number {
+  const normalized = value.trim()
+  return normalized ? normalized.split(/\s+/u).length : 0
+}
+
+export function apiErrorMessage(error: unknown, fallback: string): string {
+  if (!error || typeof error !== 'object') return fallback
+
+  const response = error as {
+    data?: { statusMessage?: string; message?: string }
+    statusMessage?: string
+    message?: string
+  }
+
+  return (
+    response.data?.statusMessage ||
+    response.data?.message ||
+    response.statusMessage ||
+    response.message ||
+    fallback
+  )
+}

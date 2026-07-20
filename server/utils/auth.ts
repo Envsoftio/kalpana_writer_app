@@ -13,11 +13,13 @@ export interface AdminSessionUser {
 export type AdminSession = UserSessionRequired & {
   user: AdminSessionUser
   loggedInAt: number
+  passwordUpdatedAt: number
 }
 
 export interface StartAdminSessionInput {
   email: string
   name?: string | null
+  passwordUpdatedAt: number
 }
 
 /** Creates a fresh sealed-cookie session after the password has been verified. */
@@ -33,6 +35,7 @@ export async function startAdminSession(
       role: 'admin',
     },
     loggedInAt: Date.now(),
+    passwordUpdatedAt: input.passwordUpdatedAt,
   })
 
   return assertAdminSession(await getUserSession(event))
@@ -44,7 +47,15 @@ export async function getAdminSession(
 ): Promise<AdminSession | null> {
   const session = await getUserSession(event)
 
-  return isAdminSession(session) ? session : null
+  if (!isAdminSession(session)) {
+    if (isRecord(session) && session.user !== undefined) {
+      await clearUserSession(event)
+    }
+
+    return null
+  }
+
+  return (await isCurrentAdminSession(event, session)) ? session : null
 }
 
 /** Rejects anonymous or malformed sessions with a consistent API response. */
@@ -56,7 +67,10 @@ export async function requireAdminSession(
     message: 'Authentication required.',
   })
 
-  if (!isAdminSession(session)) {
+  if (
+    !isAdminSession(session) ||
+    !(await isCurrentAdminSession(event, session))
+  ) {
     await clearUserSession(event)
 
     throw createError({
@@ -95,8 +109,37 @@ function isAdminSession(value: unknown): value is AdminSession {
     value.user.email.length > 0 &&
     (value.user.name === null || typeof value.user.name === 'string') &&
     typeof value.loggedInAt === 'number' &&
-    Number.isFinite(value.loggedInAt)
+    Number.isFinite(value.loggedInAt) &&
+    typeof value.passwordUpdatedAt === 'number' &&
+    Number.isFinite(value.passwordUpdatedAt)
   )
+}
+
+async function isCurrentAdminSession(
+  event: H3Event,
+  session: AdminSession,
+): Promise<boolean> {
+  const result = await getDatabaseClient(event).execute({
+    sql: `
+      SELECT email, password_updated_at AS passwordUpdatedAt
+      FROM app_user
+      WHERE id = ? AND role = 'admin' AND deleted = 0
+      LIMIT 1
+    `,
+    args: [ADMIN_USER_ID],
+  })
+  const row = result.rows[0]
+  const valid =
+    row !== undefined &&
+    typeof row.email === 'string' &&
+    row.email.trim().toLowerCase() === session.user.email &&
+    Number(row.passwordUpdatedAt) === session.passwordUpdatedAt
+
+  if (!valid) {
+    await clearUserSession(event)
+  }
+
+  return valid
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

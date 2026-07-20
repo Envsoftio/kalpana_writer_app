@@ -37,6 +37,12 @@ npm run dev
 
 The local app will be available at the URL printed by Nuxt, usually `http://localhost:3000`.
 
+Run the complete repository verification before deploying:
+
+```bash
+npm run verify
+```
+
 ## UI Direction
 
 The application uses Nuxt UI with Tailwind CSS for the component system. Nuxt UI is the default UI foundation because it is Nuxt-native, accessible, themeable, and includes the dashboard, navigation, form, table, overlay, editor, icon, and color-mode pieces this private writing workspace needs.
@@ -93,6 +99,26 @@ npm run db:verify-production
 
 `db:setup-admin` is idempotent. Rerun it with the same `ADMIN_EMAIL` and a new password to reset the admin login.
 
+## Recovery Process
+
+### Reset the admin password
+
+Set the same `ADMIN_EMAIL`, then run `npm run db:setup-admin`. Use the hidden interactive prompt, or pass `ADMIN_PASSWORD` as a one-off shell variable in non-interactive environments. Existing sessions are invalidated when the password timestamp changes.
+
+### Export a human-readable backup
+
+Sign in, open **Backups**, choose whether deleted items should be included, and create the TXT ZIP. Individual article and folder exports are also available from the Library.
+
+### Verify Turso data
+
+Run the table-list and key-count checks against the configured database:
+
+```bash
+npm run db:verify-production
+```
+
+Expected source counts are `Article=4472`, `Folder=46`, `Category=2`, and `Daily=14541`. Run this after imports, recovery operations, or environment changes.
+
 ## Server Foundation
 
 Server API routes use the utilities in `server/utils`:
@@ -105,6 +131,24 @@ Server API routes use the utilities in `server/utils`:
 
 Private Turso values live only in Nuxt's private runtime config or the server process environment. Nothing under `runtimeConfig.public` contains database credentials.
 
+## Application Features
+
+- A responsive three-pane desktop library, two-pane tablet workspace, and mobile drill-down flow.
+- Folder and article create/edit, move, soft-delete, restore, filters, ordering, and pagination.
+- Plain-text reading and editing with manual save, debounced autosave, local draft recovery, focus mode, in-article search, and metadata.
+- Global title/content search that returns excerpts instead of full article bodies.
+- Daily writing totals, date range, and top folders.
+- A read-only, allowlisted table explorer with truncated grid cells, protected full-row detail, and credential-field redaction.
+- Full TXT ZIP, single-folder ZIP, and single-article TXT exports with stable ordering and reconstruction metadata.
+
+All API routes except login and session discovery require the sealed admin session. There is intentionally no signup endpoint.
+
+## Export Validation and Hosting Limit
+
+Run the deterministic export checks with `npm run validate:export`.
+
+The source backup currently produces a full ZIP of roughly 23 MB. That is larger than standard Netlify Functions response limits, so the full-archive route is functional locally but needs one production adjustment: private object storage with a short-lived download URL, a split-archive contract, or a server host with a larger response allowance. Single-article and normal single-folder exports remain suitable for standard function responses.
+
 ## Deployment
 
 Netlify builds the SSR Nuxt app with:
@@ -113,4 +157,6 @@ Netlify builds the SSR Nuxt app with:
 npm run build
 ```
 
-The included `netlify.toml` publishes `.output/public` and uses the Netlify Nitro preset. Configure the environment variables in Netlify before deploying so Turso credentials remain server-side only.
+The included `netlify.toml` publishes `dist` and uses the Netlify Nitro preset. Configure the environment variables in Netlify before deploying so Turso credentials remain server-side only.
+
+After deployment, verify anonymous redirects and API rejection, HTTPS login/logout, browsing/search/stats/table detail, a reversible create/edit/delete/restore flow, downloads, and `npm run db:verify-production`. Do not deploy as a static-generated site: authentication and database operations rely on Nitro server routes.

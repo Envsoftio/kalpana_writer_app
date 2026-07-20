@@ -1,4 +1,8 @@
-import { createClient, type Client } from '@libsql/client'
+import {
+  createClient,
+  type Client,
+  type Transaction,
+} from '@libsql/client'
 import type { H3Event } from 'h3'
 
 let client: Client | undefined
@@ -79,3 +83,20 @@ function requiresAuthToken(url: string): boolean {
 }
 
 export type DatabaseClient = Client
+export type DatabaseExecutor = Pick<Client, 'execute'>
+
+/** Runs related writes atomically and always closes/rolls back on failure. */
+export async function withDatabaseWriteTransaction<Result>(
+  event: H3Event,
+  callback: (transaction: Transaction) => Promise<Result>,
+): Promise<Result> {
+  const transaction = await getDatabaseClient(event).transaction('write')
+
+  try {
+    const result = await callback(transaction)
+    await transaction.commit()
+    return result
+  } finally {
+    transaction.close()
+  }
+}

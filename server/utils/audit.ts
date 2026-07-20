@@ -30,6 +30,7 @@ export interface AuditLogRecord {
 export async function writeAuditLog(
   event: H3Event | undefined,
   input: AuditLogInput,
+  database: DatabaseExecutor = getDatabaseClient(event),
 ): Promise<AuditLogRecord> {
   const record: AuditLogRecord = {
     id: randomUUID(),
@@ -41,7 +42,7 @@ export async function writeAuditLog(
     createdAt: Date.now(),
   }
 
-  await getDatabaseClient(event).execute({
+  await database.execute({
     sql: `
       INSERT INTO app_audit_log (
         id,
