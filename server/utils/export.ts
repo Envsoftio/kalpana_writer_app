@@ -6,7 +6,9 @@ const EXPORT_VERSION = 1
 const MAX_EXPORT_NAME_LENGTH = 120
 const ARTICLE_PAGE_SIZE = 200
 const INITIAL_EXPORT_PART_SOURCE_BYTES = 10_000_000
-export const CLIENT_EXPORT_PAGE_SOURCE_BYTES = 3_000_000
+// Browser export pages are JSON responses, so keep the source-text target well
+// below host response limits after serialization overhead is added.
+export const CLIENT_EXPORT_PAGE_SOURCE_BYTES = 1_000_000
 export const MAX_EXPORT_PART_BYTES = 4_000_000
 const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i
 // C0 controls are intentionally rejected because archive paths must be portable.
