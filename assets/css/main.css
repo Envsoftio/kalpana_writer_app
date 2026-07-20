@@ -1353,7 +1353,7 @@ button:disabled,
   }
 
   .app-main {
-    padding: 8px 8px 64px;
+    padding: 8px 8px 78px;
   }
 
   .mobile-nav {
@@ -1363,11 +1363,11 @@ button:disabled,
     bottom: 0;
     left: 0;
     display: grid;
-    height: calc(58px + env(safe-area-inset-bottom));
+    height: calc(72px + env(safe-area-inset-bottom));
     grid-template-columns: repeat(6, 1fr);
     border-top: 1px solid var(--border);
     background: color-mix(in srgb, var(--surface) 94%, transparent);
-    padding: 5px 3px env(safe-area-inset-bottom);
+    padding: 7px 5px env(safe-area-inset-bottom);
     backdrop-filter: blur(16px);
   }
 
@@ -1375,16 +1375,17 @@ button:disabled,
     display: grid;
     place-content: center;
     justify-items: center;
-    gap: 2px;
+    gap: 4px;
     border-radius: 7px;
     color: var(--text-muted);
-    font-size: 9px;
+    font-size: 11px;
+    line-height: 1.1;
     text-decoration: none;
   }
 
   .mobile-nav a svg {
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
   }
 
   .mobile-nav a.active {
@@ -1512,7 +1513,7 @@ button:disabled,
 
   .table-detail {
     top: 56px;
-    bottom: 58px;
+    bottom: 72px;
   }
 
   .export-card {
