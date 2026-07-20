@@ -26,22 +26,38 @@ export default defineProtectedEventHandler(async (event, session) => {
   try {
     const jobFormat = parseFullExportJobFormat(String(job.format))
     const { includeDeleted } = jobFormat
-    const data = await loadWriterExportData(event, { includeDeleted })
-    const archives = buildWriterTextZipParts(data, { includeDeleted })
+    const exportPlan = await loadWriterExportPlan(event, { includeDeleted })
 
-    if (jobFormat.partCount !== archives.length) {
+    if (jobFormat.partCount !== exportPlan.parts.length) {
       throw createError({
         statusCode: 409,
         statusMessage: 'The archive changed. Please create a new backup.',
       })
     }
 
-    const archive = archives[jobFormat.partIndex]
+    const part = exportPlan.parts[jobFormat.partIndex]
 
-    if (!archive) {
+    if (!part) {
       throw createError({
         statusCode: 404,
         statusMessage: 'Export part not found.',
+      })
+    }
+
+    const data = await loadWriterExportData(event, {
+      includeDeleted,
+      articleOffset: part.articleOffset,
+      articleLimit: part.articleCount,
+    })
+    const archive = buildWriterTextZip(data, {
+      includeDeleted,
+      pathContext: exportPlan.pathContext,
+    })
+
+    if (archive.bytes.byteLength > MAX_EXPORT_PART_BYTES) {
+      throw createError({
+        statusCode: 413,
+        statusMessage: 'This export part is too large. Please contact support.',
       })
     }
 

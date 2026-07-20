@@ -3,7 +3,7 @@ import { apiErrorMessage } from '~/utils/writer'
 
 interface ExportPart {
   job: { id: string; status: string; fileName: string; createdAt: number }
-  archiveBytes: number
+  estimatedBytes: number
   downloadUrl: string
 }
 
@@ -78,7 +78,7 @@ async function createExport() {
           <a v-for="(part, index) in lastExport.parts" :key="part.job.id" :href="part.downloadUrl">
             <UIcon name="i-lucide-download" />
             <span>{{ part.job.fileName }}</span>
-            <small>{{ (part.archiveBytes / 1_048_576).toFixed(1) }} MB</small>
+            <small>Part {{ index + 1 }} of {{ lastExport.parts.length }}</small>
             <strong v-if="index === 0">Download again</strong>
           </a>
         </div>

@@ -98,6 +98,17 @@ export interface FullExportJobFormat {
   partCount: number
 }
 
+export interface WriterExportPartPlan {
+  articleOffset: number
+  articleCount: number
+  estimatedBytes: number
+}
+
+export interface WriterExportPlan {
+  parts: WriterExportPartPlan[]
+  pathContext: WriterExportPathContext
+}
+
 /**
  * Turns untrusted Writer titles into a safe, portable path segment.
  * Unicode is retained, while path separators, controls and Windows-reserved
@@ -318,7 +329,12 @@ function partitionArticlesBySourceSize(
 /** Loads a complete, consistently ordered export without one huge DB response. */
 export async function loadWriterExportData(
   event: H3Event,
-  options: { includeDeleted: boolean; folderId?: string },
+  options: {
+    includeDeleted: boolean
+    folderId?: string
+    articleOffset?: number
+    articleLimit?: number
+  },
 ): Promise<WriterExportData> {
   const client = getDatabaseClient(event)
   const folderPredicate = options.folderId ? 'AND f.id = ?' : ''
@@ -361,9 +377,11 @@ export async function loadWriterExportData(
   }
 
   const articles: WriterArticleExport[] = []
-  let offset = 0
+  let offset = options.articleOffset ?? 0
+  let remaining = options.articleLimit ?? Number.POSITIVE_INFINITY
 
-  while (true) {
+  while (remaining > 0) {
+    const pageSize = Math.min(ARTICLE_PAGE_SIZE, remaining)
     const articleResult = await client.execute({
       sql: `
         SELECT
@@ -400,16 +418,17 @@ export async function loadWriterExportData(
           a.id ASC
         LIMIT ? OFFSET ?
       `,
-      args: [...folderArgs, ARTICLE_PAGE_SIZE, offset],
+      args: [...folderArgs, pageSize, offset],
     })
 
     articles.push(...articleResult.rows.map(mapArticleRow))
+    remaining -= articleResult.rows.length
 
-    if (articleResult.rows.length < ARTICLE_PAGE_SIZE) {
+    if (articleResult.rows.length < pageSize) {
       break
     }
 
-    offset += ARTICLE_PAGE_SIZE
+    offset += pageSize
   }
 
   const categoryResult = await client.execute({
@@ -448,6 +467,90 @@ export async function loadWriterExportData(
     folders,
     articles,
     categories: categoryResult.rows.map(mapCategoryRow),
+  }
+}
+
+/** Builds a multipart plan without loading article bodies or creating ZIPs. */
+export async function loadWriterExportPlan(
+  event: H3Event,
+  options: { includeDeleted: boolean },
+): Promise<WriterExportPlan> {
+  const client = getDatabaseClient(event)
+  const activeFolderPredicate = options.includeDeleted ? '' : 'AND f.deleted = 0'
+  const folderResult = await client.execute({
+    sql: `
+      SELECT id, name
+      FROM Folder AS f
+      WHERE 1 = 1 ${activeFolderPredicate}
+      ORDER BY f.rank ASC, f.name COLLATE NOCASE ASC, f.id ASC
+    `,
+    args: [],
+  })
+  const articleResult = await client.execute({
+    sql: `
+      SELECT
+        a.id,
+        a.title,
+        a.folderId,
+        length(CAST(COALESCE(a.content, '') AS BLOB))
+          + length(CAST(COALESCE(a.title, '') AS BLOB))
+          + length(CAST(COALESCE(a.summary, '') AS BLOB))
+          + 4096 AS estimatedBytes
+      FROM Article AS a
+      INNER JOIN Folder AS f ON f.id = a.folderId
+      WHERE 1 = 1
+        ${activeFolderPredicate}
+        ${options.includeDeleted ? '' : 'AND a.deleted = 0'}
+      ORDER BY
+        f.rank ASC,
+        f.name COLLATE NOCASE ASC,
+        f.id ASC,
+        a.rank ASC,
+        CASE WHEN a.orderKey IS NULL OR a.orderKey = '' THEN 1 ELSE 0 END ASC,
+        a.orderKey COLLATE NOCASE ASC,
+        a.title COLLATE NOCASE ASC,
+        a.createTime ASC,
+        a.id ASC
+    `,
+    args: [],
+  })
+  const folders = folderResult.rows.map((row) => ({
+    id: requiredString(row.id),
+    name: requiredString(row.name),
+  }))
+  const articles = articleResult.rows.map((row) => ({
+    id: requiredString(row.id),
+    title: requiredString(row.title),
+    folderId: requiredString(row.folderId),
+    estimatedBytes: Math.max(1, numericValue(row.estimatedBytes)),
+  }))
+  const parts: WriterExportPartPlan[] = []
+  let articleOffset = 0
+  let articleCount = 0
+  let estimatedBytes = 0
+
+  for (const article of articles) {
+    if (
+      articleCount > 0 &&
+      estimatedBytes + article.estimatedBytes > INITIAL_EXPORT_PART_SOURCE_BYTES
+    ) {
+      parts.push({ articleOffset, articleCount, estimatedBytes })
+      articleOffset += articleCount
+      articleCount = 0
+      estimatedBytes = 0
+    }
+
+    articleCount += 1
+    estimatedBytes += article.estimatedBytes
+  }
+
+  if (articleCount > 0 || articles.length === 0) {
+    parts.push({ articleOffset, articleCount, estimatedBytes })
+  }
+
+  return {
+    parts,
+    pathContext: createWriterExportPathContext({ folders, articles }),
   }
 }
 
@@ -605,7 +708,10 @@ export function sendAttachmentStream(
 }
 
 export function createWriterExportPathContext(
-  data: WriterExportData,
+  data: {
+    folders: Array<Pick<WriterFolderExport, 'id' | 'name'>>
+    articles: Array<Pick<WriterArticleExport, 'id' | 'title' | 'folderId'>>
+  },
 ): WriterExportPathContext {
   const folderPaths = new Map<string, string>()
   const articlePaths = new Map<string, string>()

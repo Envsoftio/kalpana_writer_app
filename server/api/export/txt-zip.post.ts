@@ -11,19 +11,22 @@ const exportRequestSchema = z
 export default defineProtectedEventHandler(async (event, session) => {
   const { includeDeleted } = await validateBody(event, exportRequestSchema)
   const createdAt = Date.now()
-  const data = await loadWriterExportData(event, { includeDeleted })
-  const archives = buildWriterTextZipParts(data, { includeDeleted })
-  const jobs = archives.map((archive, partIndex) => ({
+  const exportPlan = await loadWriterExportPlan(event, { includeDeleted })
+  const jobs = exportPlan.parts.map((part, partIndex) => ({
     id: randomUUID(),
     status: 'ready' as const,
     fileName: createFullExportFileName(
       new Date(createdAt),
       partIndex + 1,
-      archives.length,
+      exportPlan.parts.length,
     ),
-    format: fullExportPartFormat(includeDeleted, partIndex, archives.length),
+    format: fullExportPartFormat(
+      includeDeleted,
+      partIndex,
+      exportPlan.parts.length,
+    ),
     createdAt,
-    archiveBytes: archive.bytes.byteLength,
+    estimatedBytes: part.estimatedBytes,
   }))
 
   await withDatabaseWriteTransaction(event, async (transaction) => {
@@ -62,8 +65,8 @@ export default defineProtectedEventHandler(async (event, session) => {
           format: 'txt-zip-parts',
           includeDeleted,
           partCount: jobs.length,
-          totalArchiveBytes: jobs.reduce(
-            (total, job) => total + job.archiveBytes,
+          totalEstimatedSourceBytes: jobs.reduce(
+            (total, job) => total + job.estimatedBytes,
             0,
           ),
         },
@@ -74,9 +77,9 @@ export default defineProtectedEventHandler(async (event, session) => {
 
   setCompatibleResponseStatus(event, 201)
 
-  const responseParts = jobs.map(({ format: _format, archiveBytes, ...job }) => ({
+  const responseParts = jobs.map(({ format: _format, estimatedBytes, ...job }) => ({
     job,
-    archiveBytes,
+    estimatedBytes,
     downloadUrl: `/api/export/${encodeURIComponent(job.id)}/download`,
   }))
   const firstPart = responseParts[0]
