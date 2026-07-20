@@ -7,6 +7,18 @@ const email = ref('')
 const password = ref('')
 const loading = ref(false)
 const errorMessage = ref('')
+const route = useRoute()
+const { fetch: refreshSession, loggedIn } = useUserSession()
+
+function getSafeRedirect(): string {
+  const redirect = route.query.redirect
+
+  return typeof redirect === 'string' &&
+    redirect.startsWith('/') &&
+    !redirect.startsWith('//')
+    ? redirect
+    : '/'
+}
 
 async function login() {
   errorMessage.value = ''
@@ -18,8 +30,17 @@ async function login() {
       body: { email: email.value, password: password.value },
     })
 
-    const redirect = useRoute().query.redirect
-    await navigateTo(typeof redirect === 'string' ? redirect : '/')
+    // The login endpoint updates the cookie, but the route middleware reads
+    // nuxt-auth-utils' client state. Refresh it before navigating so the
+    // middleware does not immediately send the user back to /login.
+    await refreshSession()
+
+    if (!loggedIn.value) {
+      throw new Error('The session could not be refreshed after signing in.')
+    }
+
+    password.value = ''
+    await navigateTo(getSafeRedirect(), { replace: true })
   } catch (error) {
     const response = error as {
       data?: { statusMessage?: string; message?: string }
@@ -31,7 +52,6 @@ async function login() {
       response.statusMessage ||
       'Unable to sign in. Check your credentials and try again.'
   } finally {
-    password.value = ''
     loading.value = false
   }
 }
