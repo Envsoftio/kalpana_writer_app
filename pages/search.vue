@@ -69,12 +69,13 @@ async function search(page = 1) {
   }
 }
 
-function folderLink(item: SearchResult) {
+function articleLink(item: SearchResult) {
   return {
     path: '/',
     query: {
       folder: item.folderId,
-      view: 'folders',
+      article: item.id,
+      view: 'editor',
       ...(includeDeleted.value ? { folderStatus: 'all' } : {}),
     },
   }
@@ -148,7 +149,7 @@ onMounted(() => {
       <NuxtLink
         v-for="item in items"
         :key="item.id"
-        :to="folderLink(item)"
+        :to="articleLink(item)"
         class="search-result"
       >
         <span class="result-kicker">

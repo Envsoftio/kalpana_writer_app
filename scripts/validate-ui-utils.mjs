@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import {
   apiErrorMessage,
+  apiErrorStatusCode,
   countWords,
   isDeleted,
   toWriterDate,
@@ -19,6 +20,9 @@ assert.equal(
   apiErrorMessage({ data: { statusMessage: 'Expected' } }, 'Fallback'),
   'Expected',
 )
+assert.equal(apiErrorStatusCode({ response: { status: 401 } }), 401)
+assert.equal(apiErrorStatusCode({ data: { statusCode: 503 } }), 503)
+assert.equal(apiErrorStatusCode(new Error('Unknown')), null)
 assert.equal(apiErrorMessage(null, 'Fallback'), 'Fallback')
 
 console.log('UI utility validation passed.')

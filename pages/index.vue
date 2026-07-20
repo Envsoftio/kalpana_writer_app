@@ -5,7 +5,11 @@ import type {
   FolderRecord,
   Pagination,
 } from '#shared/types/writer'
-import { apiErrorMessage, isDeleted } from '~/utils/writer'
+import {
+  apiErrorMessage,
+  apiErrorStatusCode,
+  isDeleted,
+} from '~/utils/writer'
 
 useHead({ title: 'Library · Writer Archive' })
 
@@ -14,6 +18,7 @@ type ArticleStatus = 'active' | 'deleted' | 'all'
 
 const route = useRoute()
 const router = useRouter()
+const { clear: clearSession } = useUserSession()
 
 const folders = ref<FolderRecord[]>([])
 const activeFolders = ref<FolderRecord[]>([])
@@ -36,6 +41,7 @@ const pageError = ref('')
 let articleSearchTimer: ReturnType<typeof setTimeout> | undefined
 let folderRequestId = 0
 let articleRequestId = 0
+let articleDetailRequestId = 0
 
 const selectedFolderId = computed(() =>
   typeof route.query.folder === 'string' ? route.query.folder : null,
@@ -153,8 +159,13 @@ async function loadArticles(page = 1) {
 }
 
 async function loadArticle() {
-  if (!selectedArticleId.value) {
+  const requestId = ++articleDetailRequestId
+  const requestedArticleId = selectedArticleId.value
+  const requestedPath = route.fullPath
+
+  if (!requestedArticleId) {
     article.value = null
+    articleLoading.value = false
     return
   }
 
@@ -162,14 +173,37 @@ async function loadArticle() {
   pageError.value = ''
   try {
     const response = await $fetch<{ article: ArticleRecord }>(
-      `/api/articles/${encodeURIComponent(selectedArticleId.value)}`,
+      `/api/articles/${encodeURIComponent(requestedArticleId)}`,
+      { retry: 1, retryDelay: 250 },
     )
+
+    if (requestId !== articleDetailRequestId) return
+
     article.value = response.article
   } catch (error) {
+    if (requestId !== articleDetailRequestId) return
+
     article.value = null
+
+    if (apiErrorStatusCode(error) === 401) {
+      try {
+        await clearSession()
+      } catch {
+        // The API response already invalidated the server-side session.
+      }
+
+      if (requestId === articleDetailRequestId) {
+        await navigateTo(
+          { path: '/login', query: { redirect: requestedPath } },
+          { replace: true },
+        )
+      }
+      return
+    }
+
     pageError.value = apiErrorMessage(error, 'The article could not be loaded.')
   } finally {
-    articleLoading.value = false
+    if (requestId === articleDetailRequestId) articleLoading.value = false
   }
 }
 

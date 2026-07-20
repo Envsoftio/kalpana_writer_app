@@ -45,3 +45,29 @@ export function apiErrorMessage(error: unknown, fallback: string): string {
     fallback
   )
 }
+
+export function apiErrorStatusCode(error: unknown): number | null {
+  if (!error || typeof error !== 'object') return null
+
+  const response = error as {
+    status?: unknown
+    statusCode?: unknown
+    response?: { status?: unknown }
+    data?: { status?: unknown; statusCode?: unknown }
+  }
+  const candidates = [
+    response.statusCode,
+    response.status,
+    response.response?.status,
+    response.data?.statusCode,
+    response.data?.status,
+  ]
+
+  for (const candidate of candidates) {
+    const statusCode = Number(candidate)
+    if (Number.isInteger(statusCode) && statusCode >= 100 && statusCode <= 599)
+      return statusCode
+  }
+
+  return null
+}

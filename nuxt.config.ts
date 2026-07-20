@@ -3,6 +3,9 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
   devtools: { enabled: process.env.NODE_ENV !== 'production' },
   modules: ['nuxt-auth-utils', '@nuxt/ui', '@nuxt/eslint'],
+  experimental: {
+    emitRouteChunkError: 'automatic-immediate',
+  },
   nitro: {
     preset: 'netlify',
   },
