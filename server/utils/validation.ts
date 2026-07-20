@@ -48,6 +48,19 @@ async function readRequestText(event: H3Event): Promise<string> {
   const compatibleEvent = event as unknown as CompatibleH3Event
   const nodeRequest = compatibleEvent.node?.req
 
+  // Serverless adapters (including Nitro's Netlify preset) can materialize a
+  // web request as a synthetic Node request. Its body is stored separately,
+  // so reading the synthetic stream directly returns an empty string.
+  const preparedBody =
+    compatibleEvent._requestBody ??
+    compatibleEvent.web?.request?.body ??
+    nodeRequest?.rawBody ??
+    nodeRequest?.body
+
+  if (preparedBody !== undefined && preparedBody !== null) {
+    return readBodySource(preparedBody)
+  }
+
   if (nodeRequest) {
     const contentLength = Number(nodeRequest.headers['content-length'] ?? 0)
 
@@ -93,6 +106,66 @@ async function readRequestText(event: H3Event): Promise<string> {
   return text
 }
 
+async function readBodySource(source: unknown): Promise<string> {
+  const resolved = await source
+
+  if (typeof resolved === 'string') {
+    assertBodySize(Buffer.byteLength(resolved, 'utf8'))
+    return resolved
+  }
+
+  if (Buffer.isBuffer(resolved)) {
+    assertBodySize(resolved.byteLength)
+    return resolved.toString('utf8')
+  }
+
+  if (resolved instanceof ArrayBuffer || ArrayBuffer.isView(resolved)) {
+    const buffer = Buffer.from(
+      resolved instanceof ArrayBuffer
+        ? resolved
+        : resolved.buffer.slice(
+            resolved.byteOffset,
+            resolved.byteOffset + resolved.byteLength,
+          ),
+    )
+    assertBodySize(buffer.byteLength)
+    return buffer.toString('utf8')
+  }
+
+  if (resolved instanceof ReadableStream) {
+    const reader = resolved.getReader()
+    const chunks: Buffer[] = []
+    let byteLength = 0
+
+    while (true) {
+      const { done, value } = await reader.read()
+
+      if (done) break
+
+      const chunk = Buffer.from(value)
+      byteLength += chunk.byteLength
+      assertBodySize(byteLength)
+      chunks.push(chunk)
+    }
+
+    return Buffer.concat(chunks).toString('utf8')
+  }
+
+  if (typeof resolved === 'object') {
+    const text = JSON.stringify(resolved)
+    assertBodySize(Buffer.byteLength(text, 'utf8'))
+    return text
+  }
+
+  throw new TypeError('Unsupported request body.')
+}
+
+function assertBodySize(byteLength: number): void {
+  if (byteLength > MAX_JSON_BODY_BYTES) {
+    throw new RequestBodyTooLargeError()
+  }
+}
+
 export function validateQuery<Schema extends ZodType>(
   event: H3Event,
   schema: Schema,
@@ -134,9 +207,12 @@ export function validateRequestData<Schema extends ZodType>(
 }
 
 interface CompatibleH3Event {
+  _requestBody?: unknown
   node?: {
     req?: NodeJS.ReadableStream & {
+      body?: unknown
       headers: Record<string, string | string[] | undefined>
+      rawBody?: unknown
       url?: string
     }
   }

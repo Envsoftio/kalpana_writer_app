@@ -27,7 +27,8 @@ async function login() {
   try {
     await $fetch('/api/auth/login', {
       method: 'POST',
-      body: { email: email.value, password: password.value },
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: email.value, password: password.value }),
     })
 
     // The login endpoint updates the cookie, but the route middleware reads
@@ -113,8 +114,8 @@ async function login() {
       </form>
 
       <p class="login-footnote">
-        There is no public signup. The admin account is managed with the server-side
-        setup script.
+        There is no public signup. The admin account is managed with the
+        server-side setup script.
       </p>
     </section>
   </main>
