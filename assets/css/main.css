@@ -1109,6 +1109,10 @@ button:disabled,
   padding: 24px;
 }
 
+.export-card + .export-card {
+  margin-top: 12px;
+}
+
 .export-icon,
 .settings-icon {
   display: grid;

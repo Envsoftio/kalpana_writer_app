@@ -6,12 +6,18 @@ import {
   buildWriterTextZipParts,
   createFullExportFileName,
   createWriterExportPagePathContext,
+  createWriterExportPathContext,
   formatArticleText,
   fullExportPartFormat,
   parseFullExportJobFormat,
   parseBrowserExportJobFormat,
   sanitizeExportName,
 } from '../server/utils/export.ts'
+import {
+  browserSQLiteExportJobFormat,
+  createSQLiteExportFileName,
+  parseBrowserSQLiteExportJobFormat,
+} from '../server/utils/sqlite-export.ts'
 
 const exportedAt = new Date('2026-07-20T12:30:00.000Z')
 const folders = [
@@ -93,9 +99,9 @@ const archive = buildWriterTextZip(
 const files = unzipSync(archive.bytes)
 const paths = Object.keys(files)
 const expectedArticlePaths = [
-  'Writer Export/001 - Book One/001 - First draft.txt',
-  'Writer Export/001 - Book One/002 - Untitled.txt',
-  'Writer Export/002 - CON_/001 - Deleted chapter.txt',
+  'Writer Export/001 - Book One/First draft.txt',
+  'Writer Export/001 - Book One/Untitled.txt',
+  'Writer Export/002 - CON_/Deleted chapter.txt',
 ]
 
 assert.deepEqual(
@@ -165,6 +171,7 @@ const browserPlan = {
     { folderId: 'folder-1', articleCount: 2 },
     { folderId: 'folder-2', articleCount: 1 },
   ],
+  articleNameOccurrences: [1, 1, 1],
 }
 const browserFormat = browserExportJobFormat(true, browserPlan)
 assert.match(browserFormat, /^txt-zip-browser\+deleted;pages=2;snapshot=/)
@@ -173,8 +180,9 @@ assert.deepEqual(parseBrowserExportJobFormat(browserFormat), {
   pageCount: 2,
   snapshot: {
     pageArticleCounts: [2, 1],
-    articleIds: articles.map((article) => article.id),
-    folderArticleCounts: browserPlan.folderArticleCounts,
+      articleIds: articles.map((article) => article.id),
+      folderArticleCounts: browserPlan.folderArticleCounts,
+      articleNameOccurrences: browserPlan.articleNameOccurrences,
   },
 })
 assert.deepEqual(parseBrowserExportJobFormat('txt-zip-browser;pages=39'), {
@@ -187,15 +195,74 @@ const pagePathContext = createWriterExportPagePathContext(
   {
     articleOffset: 2,
     folderArticleCounts: browserPlan.folderArticleCounts,
+    articleNameOccurrences: browserPlan.articleNameOccurrences,
   },
 )
 assert.equal(
   pagePathContext.articlePaths.get('article-3'),
   expectedArticlePaths[2],
 )
+const duplicatePathContext = createWriterExportPathContext({
+  folders: [folders[0]],
+  articles: [
+    createArticle({ id: 'duplicate-1', title: 'Same', folderId: 'folder-1' }),
+    createArticle({ id: 'duplicate-2', title: 'same', folderId: 'folder-1' }),
+    createArticle({
+      id: 'duplicate-3',
+      title: 'Same (2)',
+      folderId: 'folder-1',
+    }),
+    createArticle({ id: 'duplicate-4', title: 'Same', folderId: 'folder-1' }),
+  ],
+})
+assert.deepEqual(
+  [...duplicatePathContext.articlePaths.values()],
+  [
+    'Writer Export/001 - Book One/Same.txt',
+    'Writer Export/001 - Book One/same (2).txt',
+    'Writer Export/001 - Book One/Same (2) (2).txt',
+    'Writer Export/001 - Book One/Same (3).txt',
+  ],
+)
 assert.equal(
   createFullExportFileName(exportedAt, 2, 12),
   'Writer Export - 2026-07-20 - Part 02 of 12.zip',
+)
+const sqliteDefinition = {
+  version: 1,
+  userVersion: 27,
+  applicationId: 0,
+  tables: [
+    {
+      name: 'Article',
+      sql: 'CREATE TABLE Article (id TEXT PRIMARY KEY, content TEXT)',
+      columns: [
+        { name: 'id', type: 'TEXT', integer: false, primaryKeyPosition: 1 },
+        {
+          name: 'content',
+          type: 'TEXT',
+          integer: false,
+          primaryKeyPosition: 0,
+        },
+      ],
+      rowCount: 3,
+      pageRowCounts: [2, 1],
+      withoutRowid: false,
+    },
+  ],
+  indexes: ['CREATE INDEX index_Article_id ON Article (id)'],
+  totalRows: 3,
+  totalPages: 2,
+}
+const sqliteFormat = browserSQLiteExportJobFormat(sqliteDefinition)
+assert.match(sqliteFormat, /^sqlite-browser;snapshot=/)
+assert.deepEqual(
+  parseBrowserSQLiteExportJobFormat(sqliteFormat),
+  sqliteDefinition,
+)
+assert.equal(
+  createSQLiteExportFileName(exportedAt),
+  'Writer Backup - 2026-07-20.db',
 )
 
 console.log(

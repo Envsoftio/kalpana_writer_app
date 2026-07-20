@@ -105,9 +105,9 @@ npm run db:verify-production
 
 Set the same `ADMIN_EMAIL`, then run `npm run db:setup-admin`. Use the hidden interactive prompt, or pass `ADMIN_PASSWORD` as a one-off shell variable in non-interactive environments. Existing sessions are invalidated when the password timestamp changes.
 
-### Export a human-readable backup
+### Export backups
 
-Sign in, open **Backups**, choose whether deleted items should be included, and create the TXT ZIP. Individual article and folder exports are also available from the Library.
+Sign in and open **Backups**. You can create a human-readable TXT ZIP or download a full SQLite `.db` containing the Writer/Android tables, data, and indexes. Web-only login, audit, and export-job tables are excluded from the portable SQLite file. Individual article and folder exports are also available from the Library.
 
 ### Verify Turso data
 
@@ -139,7 +139,7 @@ Private Turso values live only in Nuxt's private runtime config or the server pr
 - Global title/content search that returns excerpts instead of full article bodies.
 - Daily writing totals, date range, and top folders.
 - A read-only, allowlisted table explorer with truncated grid cells, protected full-row detail, and credential-field redaction.
-- Full TXT ZIP, single-folder ZIP, and single-article TXT exports with stable ordering and reconstruction metadata.
+- Full TXT ZIP, portable SQLite `.db`, single-folder ZIP, and single-article TXT exports with stable ordering and reconstruction metadata.
 
 All API routes except login and session discovery require the sealed admin session. There is intentionally no signup endpoint.
 
@@ -147,7 +147,7 @@ All API routes except login and session discovery require the sealed admin sessi
 
 Run the deterministic export checks with `npm run validate:export`.
 
-The source backup currently produces roughly 23 MB of compressed data, which is larger than a Netlify Function response. Full backups are assembled incrementally in the authenticated browser from bounded data pages, producing one complete ZIP without loading all source text into memory at once. Single-article and normal single-folder exports remain separate downloads.
+The source backup is larger than a Netlify Function response. Full TXT and SQLite backups are assembled incrementally in the authenticated browser from bounded data pages. SQLite generation uses the packaged `sql.js` WebAssembly build and produces a genuine `.db` file without exposing Turso credentials. Single-article and normal single-folder exports remain separate downloads.
 
 ## Deployment
 

@@ -63,6 +63,7 @@ export default defineProtectedEventHandler(async (event, session) => {
   const pathContext = createWriterExportPagePathContext(data, {
     articleOffset,
     folderArticleCounts: snapshot.folderArticleCounts,
+    articleNameOccurrences: snapshot.articleNameOccurrences,
   })
 
   if (pathContext.articlePaths.size !== data.articles.length) {

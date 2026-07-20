@@ -113,6 +113,7 @@ export interface WriterExportPlan {
   articleCount: number
   articleIds: string[]
   folderArticleCounts: WriterExportFolderArticleCount[]
+  articleNameOccurrences: number[]
 }
 
 export interface WriterExportFolderArticleCount {
@@ -124,6 +125,7 @@ export interface BrowserExportSnapshot {
   pageArticleCounts: number[]
   articleIds: string[]
   folderArticleCounts: WriterExportFolderArticleCount[]
+  articleNameOccurrences: number[]
 }
 
 export interface BrowserExportJobFormat {
@@ -620,6 +622,7 @@ export async function loadWriterExportPlan(
     articleCount: articles.length,
     articleIds: articles.map((article) => article.id),
     folderArticleCounts: collectFolderArticleCounts(articles),
+    articleNameOccurrences: collectArticleNameOccurrences(articles),
   }
 }
 
@@ -639,6 +642,34 @@ function collectFolderArticleCounts(
   }
 
   return counts
+}
+
+function collectArticleNameOccurrences(
+  articles: Array<Pick<WriterArticleExport, 'title' | 'folderId'>>,
+): number[] {
+  const usedNamesByFolder = new Map<string, Set<string>>()
+  const nextOccurrenceByFolder = new Map<string, Map<string, number>>()
+
+  return articles.map((article) => {
+    const baseName = sanitizeExportName(article.title)
+    const baseKey = portableExportNameKey(baseName)
+    const usedNames = usedNamesByFolder.get(article.folderId) ?? new Set<string>()
+    const nextOccurrences =
+      nextOccurrenceByFolder.get(article.folderId) ?? new Map<string, number>()
+    let occurrence = 1
+    let candidate = baseName
+
+    while (usedNames.has(portableExportNameKey(candidate))) {
+      occurrence = nextOccurrences.get(baseKey) ?? 2
+      candidate = articleExportBaseName(baseName, occurrence)
+      nextOccurrences.set(baseKey, occurrence + 1)
+    }
+
+    usedNames.add(portableExportNameKey(candidate))
+    usedNamesByFolder.set(article.folderId, usedNames)
+    nextOccurrenceByFolder.set(article.folderId, nextOccurrences)
+    return occurrence
+  })
 }
 
 /** Loads one article and applies the same active/deleted policy as ZIP export. */
@@ -743,18 +774,22 @@ export function browserExportJobFormat(
   includeDeleted: boolean,
   plan: Pick<
     WriterExportPlan,
-    'parts' | 'articleIds' | 'folderArticleCounts'
+    | 'parts'
+    | 'articleIds'
+    | 'folderArticleCounts'
+    | 'articleNameOccurrences'
   >,
 ): string {
   const pageArticleCounts = plan.parts.map((part) => part.articleCount)
   const snapshot = Buffer.from(
     JSON.stringify({
-      v: 1,
+      v: 2,
       p: pageArticleCounts,
       i: plan.articleIds,
       f: plan.folderArticleCounts.map(
         ({ folderId, articleCount }) => [folderId, articleCount] as const,
       ),
+      n: plan.articleNameOccurrences,
     }),
   ).toString('base64url')
 
@@ -789,13 +824,14 @@ export function parseBrowserExportJobFormat(
     throwUnsupportedBrowserExport()
   }
 
-  if (!isRecord(value) || value.v !== 1) {
+  if (!isRecord(value) || value.v !== 2) {
     throwUnsupportedBrowserExport()
   }
 
   const pageArticleCounts = value.p
   const articleIds = value.i
   const serializedFolderCounts = value.f
+  const articleNameOccurrences = value.n
 
   if (
     !Array.isArray(pageArticleCounts) ||
@@ -806,7 +842,12 @@ export function parseBrowserExportJobFormat(
     !Array.isArray(articleIds) ||
     !articleIds.every(isExportEntityId) ||
     new Set(articleIds).size !== articleIds.length ||
-    !Array.isArray(serializedFolderCounts)
+    !Array.isArray(serializedFolderCounts) ||
+    !Array.isArray(articleNameOccurrences) ||
+    articleNameOccurrences.length !== articleIds.length ||
+    !articleNameOccurrences.every(
+      (occurrence) => Number.isInteger(occurrence) && Number(occurrence) >= 1,
+    )
   ) {
     throwUnsupportedBrowserExport()
   }
@@ -861,6 +902,7 @@ export function parseBrowserExportJobFormat(
       pageArticleCounts: pageArticleCounts.map(Number),
       articleIds,
       folderArticleCounts,
+      articleNameOccurrences: articleNameOccurrences.map(Number),
     },
   }
 }
@@ -936,33 +978,25 @@ export function createWriterExportPathContext(
   const folderPaths = new Map<string, string>()
   const articlePaths = new Map<string, string>()
   const folderWidth = prefixWidth(data.folders.length)
-  const articleCounts = new Map<string, number>()
-
-  data.articles.forEach((article) => {
-    articleCounts.set(
-      article.folderId,
-      (articleCounts.get(article.folderId) ?? 0) + 1,
-    )
-  })
 
   data.folders.forEach((folder, folderIndex) => {
     const folderName = `${numericPrefix(folderIndex, folderWidth)} - ${sanitizeExportName(folder.name, 'Untitled Folder')}`
     folderPaths.set(folder.id, `${ARCHIVE_ROOT}/${folderName}`)
   })
 
-  const articleIndexes = new Map<string, number>()
+  const articleNameOccurrences = collectArticleNameOccurrences(data.articles)
 
-  data.articles.forEach((article) => {
+  data.articles.forEach((article, articleIndex) => {
     const folderPath = folderPaths.get(article.folderId)
 
     if (!folderPath) {
       return
     }
 
-    const articleIndex = articleIndexes.get(article.folderId) ?? 0
-    const articleWidth = prefixWidth(articleCounts.get(article.folderId) ?? 0)
-    const articleName = `${numericPrefix(articleIndex, articleWidth)} - ${sanitizeExportName(article.title)}.txt`
-    articleIndexes.set(article.folderId, articleIndex + 1)
+    const articleName = createArticleFileName(
+      article.title,
+      articleNameOccurrences[articleIndex] ?? 1,
+    )
     articlePaths.set(article.id, `${folderPath}/${articleName}`)
   })
 
@@ -978,6 +1012,7 @@ export function createWriterExportPagePathContext(
   options: {
     articleOffset: number
     folderArticleCounts: WriterExportFolderArticleCount[]
+    articleNameOccurrences: number[]
   },
 ): WriterExportPathContext {
   const { folderPaths } = createWriterExportPathContext({
@@ -1015,12 +1050,27 @@ export function createWriterExportPagePathContext(
       return
     }
 
-    const articleWidth = prefixWidth(folderRange.articleCount)
-    const articleName = `${numericPrefix(folderArticleIndex, articleWidth)} - ${sanitizeExportName(article.title)}.txt`
+    const articleName = createArticleFileName(
+      article.title,
+      options.articleNameOccurrences[globalArticleIndex] ?? 1,
+    )
     articlePaths.set(article.id, `${folderPath}/${articleName}`)
   })
 
   return { folderPaths, articlePaths }
+}
+
+function createArticleFileName(title: string, occurrence: number): string {
+  const baseName = sanitizeExportName(title)
+  return `${articleExportBaseName(baseName, occurrence)}.txt`
+}
+
+function articleExportBaseName(baseName: string, occurrence: number): string {
+  return occurrence > 1 ? `${baseName} (${occurrence})` : baseName
+}
+
+function portableExportNameKey(value: string): string {
+  return value.toLocaleLowerCase('en-US')
 }
 
 function prefixWidth(itemCount: number): number {
