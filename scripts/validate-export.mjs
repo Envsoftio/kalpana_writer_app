@@ -2,7 +2,11 @@ import assert from 'node:assert/strict'
 import { strFromU8, unzipSync } from 'fflate'
 import {
   buildWriterTextZip,
+  buildWriterTextZipParts,
+  createFullExportFileName,
   formatArticleText,
+  fullExportPartFormat,
+  parseFullExportJobFormat,
   sanitizeExportName,
 } from '../server/utils/export.ts'
 
@@ -124,8 +128,37 @@ assert.equal(
   true,
 )
 
+const parts = buildWriterTextZipParts(
+  { folders, articles, categories: [] },
+  {
+    includeDeleted: true,
+    exportedAt,
+    initialSourceBytes: 1_050,
+    maximumPartBytes: 2_300,
+  },
+)
+
+assert.equal(parts.length, 3)
+assert(parts.every((part) => part.bytes.byteLength <= 2_300))
+assert.deepEqual(
+  parts.flatMap((part) =>
+    Object.keys(unzipSync(part.bytes)).filter((path) => path.endsWith('.txt')),
+  ),
+  expectedArticlePaths,
+)
+assert.deepEqual(parseFullExportJobFormat('txt-zip+deleted;part=2/3'), {
+  includeDeleted: true,
+  partIndex: 1,
+  partCount: 3,
+})
+assert.equal(fullExportPartFormat(false, 0, 3), 'txt-zip;part=1/3')
+assert.equal(
+  createFullExportFileName(exportedAt, 2, 12),
+  'Writer Export - 2026-07-20 - Part 02 of 12.zip',
+)
+
 console.log(
-  `Export validation passed (${folders.length} folders, ${articles.length} articles, ${archive.bytes.byteLength} ZIP bytes).`,
+  `Export validation passed (${folders.length} folders, ${articles.length} articles, ${parts.length} ZIP parts).`,
 )
 
 function createArticle(overrides) {

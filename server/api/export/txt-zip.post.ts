@@ -10,50 +10,80 @@ const exportRequestSchema = z
 
 export default defineProtectedEventHandler(async (event, session) => {
   const { includeDeleted } = await validateBody(event, exportRequestSchema)
-  const id = randomUUID()
   const createdAt = Date.now()
-  const fileName = createFullExportFileName(new Date(createdAt))
-  const format = fullExportFormat(includeDeleted)
+  const data = await loadWriterExportData(event, { includeDeleted })
+  const archives = buildWriterTextZipParts(data, { includeDeleted })
+  const jobs = archives.map((archive, partIndex) => ({
+    id: randomUUID(),
+    status: 'ready' as const,
+    fileName: createFullExportFileName(
+      new Date(createdAt),
+      partIndex + 1,
+      archives.length,
+    ),
+    format: fullExportPartFormat(includeDeleted, partIndex, archives.length),
+    createdAt,
+    archiveBytes: archive.bytes.byteLength,
+  }))
 
   await withDatabaseWriteTransaction(event, async (transaction) => {
-    await transaction.execute({
-      sql: `
-        INSERT INTO app_export_job (
-          id,
-          user_id,
-          format,
-          status,
-          file_name,
-          error,
-          created_at,
-          completed_at
-        )
-        VALUES (?, ?, ?, 'ready', ?, NULL, ?, NULL)
-      `,
-      args: [id, session.user.id, format, fileName, createdAt],
-    })
+    for (const job of jobs) {
+      await transaction.execute({
+        sql: `
+          INSERT INTO app_export_job (
+            id,
+            user_id,
+            format,
+            status,
+            file_name,
+            error,
+            created_at,
+            completed_at
+          )
+          VALUES (?, ?, ?, 'ready', ?, NULL, ?, NULL)
+        `,
+        args: [
+          job.id,
+          session.user.id,
+          job.format,
+          job.fileName,
+          createdAt,
+        ],
+      })
+    }
 
-    await writeAuditLog(event, {
-      action: 'export.job.create',
-      entityType: 'app_export_job',
-      entityId: id,
-      metadata: {
-        format: 'txt-zip',
-        includeDeleted,
-        fileName,
+    await writeAuditLog(
+      event,
+      {
+        action: 'export.job.create',
+        entityType: 'app_export_job',
+        entityId: jobs[0]?.id ?? null,
+        metadata: {
+          format: 'txt-zip-parts',
+          includeDeleted,
+          partCount: jobs.length,
+          totalArchiveBytes: jobs.reduce(
+            (total, job) => total + job.archiveBytes,
+            0,
+          ),
+        },
       },
-    }, transaction)
+      transaction,
+    )
   })
 
   setCompatibleResponseStatus(event, 201)
 
+  const responseParts = jobs.map(({ format: _format, archiveBytes, ...job }) => ({
+    job,
+    archiveBytes,
+    downloadUrl: `/api/export/${encodeURIComponent(job.id)}/download`,
+  }))
+  const firstPart = responseParts[0]
+
   return {
-    job: {
-      id,
-      status: 'ready' as const,
-      fileName,
-      createdAt,
-    },
-    downloadUrl: `/api/export/${encodeURIComponent(id)}/download`,
+    job: firstPart?.job,
+    downloadUrl: firstPart?.downloadUrl,
+    parts: responseParts,
   }
 })

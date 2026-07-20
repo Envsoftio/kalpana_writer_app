@@ -1191,9 +1191,51 @@ button:disabled,
   flex: 1;
 }
 
-.last-export a {
+.last-export-content {
+  display: grid;
+  flex: 1;
+  gap: 5px;
+  min-width: 0;
+}
+
+.last-export-content > span {
+  color: var(--text-muted);
+}
+
+.export-parts {
+  display: grid;
+  gap: 2px;
+  margin-top: 7px;
+}
+
+.export-parts a {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
   color: #16814a;
+  padding: 6px 0;
+  text-decoration: none;
+}
+
+.export-parts a + a {
+  border-top: 1px solid var(--border);
+}
+
+.export-parts a > span {
+  overflow: hidden;
+  color: var(--text);
   font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.export-parts small {
+  color: var(--text-muted);
+}
+
+.export-parts a > strong {
+  font-size: 11px;
 }
 
 .settings-grid {

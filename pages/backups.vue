@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import { apiErrorMessage } from '~/utils/writer'
 
-interface ExportResponse {
+interface ExportPart {
   job: { id: string; status: string; fileName: string; createdAt: number }
+  archiveBytes: number
   downloadUrl: string
+}
+
+interface ExportResponse {
+  parts: ExportPart[]
 }
 
 useHead({ title: 'Backups · Writer Archive' })
@@ -21,8 +26,14 @@ async function createExport() {
       method: 'POST',
       body: { includeDeleted: includeDeleted.value },
     })
+
+    if (!response.parts[0]) {
+      throw new Error('The export did not contain any downloadable parts.')
+    }
+
     lastExport.value = response
-    if (import.meta.client) window.location.assign(response.downloadUrl)
+    if (import.meta.client)
+      window.location.assign(response.parts[0].downloadUrl)
   } catch (error) {
     errorMessage.value = apiErrorMessage(error, 'The export could not be prepared.')
   } finally {
@@ -60,8 +71,18 @@ async function createExport() {
 
     <section v-if="lastExport" class="last-export">
       <UIcon name="i-lucide-circle-check" />
-      <span><strong>{{ lastExport.job.fileName }}</strong> is ready.</span>
-      <a :href="lastExport.downloadUrl">Download again</a>
+      <div class="last-export-content">
+        <strong>Backup ready in {{ lastExport.parts.length }} ZIP {{ lastExport.parts.length === 1 ? 'file' : 'parts' }}</strong>
+        <span>Part 1 should download automatically. Download every listed part to keep a complete backup.</span>
+        <div class="export-parts">
+          <a v-for="(part, index) in lastExport.parts" :key="part.job.id" :href="part.downloadUrl">
+            <UIcon name="i-lucide-download" />
+            <span>{{ part.job.fileName }}</span>
+            <small>{{ (part.archiveBytes / 1_048_576).toFixed(1) }} MB</small>
+            <strong v-if="index === 0">Download again</strong>
+          </a>
+        </div>
+      </div>
     </section>
 
     <section class="info-card">

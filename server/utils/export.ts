@@ -5,6 +5,8 @@ const ARCHIVE_ROOT = 'Writer Export'
 const EXPORT_VERSION = 1
 const MAX_EXPORT_NAME_LENGTH = 120
 const ARTICLE_PAGE_SIZE = 200
+const INITIAL_EXPORT_PART_SOURCE_BYTES = 10_000_000
+export const MAX_EXPORT_PART_BYTES = 4_000_000
 const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i
 // C0 controls are intentionally rejected because archive paths must be portable.
 // eslint-disable-next-line no-control-regex
@@ -76,9 +78,24 @@ export interface WriterExportMetadata {
   categories: WriterCategoryExport[]
 }
 
+export interface WriterExportPathContext {
+  folderPaths: Map<string, string>
+  articlePaths: Map<string, string>
+}
+
 export interface BuiltWriterZip {
   bytes: Uint8Array<ArrayBuffer>
   metadata: WriterExportMetadata
+}
+
+export interface BuiltWriterZipPart extends BuiltWriterZip {
+  data: WriterExportData
+}
+
+export interface FullExportJobFormat {
+  includeDeleted: boolean
+  partIndex: number
+  partCount: number
 }
 
 /**
@@ -135,12 +152,16 @@ export function formatArticleText(article: WriterArticleExport): string {
 /** Builds the reconstruction metadata used both in the ZIP and by tests/UI. */
 export function buildExportMetadata(
   data: WriterExportData,
-  options: { includeDeleted: boolean; exportedAt?: Date } = {
+  options: {
+    includeDeleted: boolean
+    exportedAt?: Date
+    pathContext?: WriterExportPathContext
+  } = {
     includeDeleted: false,
   },
 ): WriterExportMetadata {
   const exportedAt = (options.exportedAt ?? new Date()).toISOString()
-  const paths = buildExportPaths(data)
+  const paths = options.pathContext ?? createWriterExportPathContext(data)
 
   return {
     exportInfo: {
@@ -167,7 +188,11 @@ export function buildExportMetadata(
 /** Creates the required folder-based text ZIP entirely in request memory. */
 export function buildWriterTextZip(
   data: WriterExportData,
-  options: { includeDeleted: boolean; exportedAt?: Date } = {
+  options: {
+    includeDeleted: boolean
+    exportedAt?: Date
+    pathContext?: WriterExportPathContext
+  } = {
     includeDeleted: false,
   },
 ): BuiltWriterZip {
@@ -206,6 +231,88 @@ export function buildWriterTextZip(
     bytes: zipSync(files, { level: 6 }),
     metadata,
   }
+}
+
+export function buildWriterTextZipParts(
+  data: WriterExportData,
+  options: {
+    includeDeleted: boolean
+    exportedAt?: Date
+    initialSourceBytes?: number
+    maximumPartBytes?: number
+  },
+): BuiltWriterZipPart[] {
+  const pathContext = createWriterExportPathContext(data)
+  const initialParts = partitionArticlesBySourceSize(
+    data.articles,
+    options.initialSourceBytes ?? INITIAL_EXPORT_PART_SOURCE_BYTES,
+  )
+  const parts: BuiltWriterZipPart[] = []
+
+  for (const articles of initialParts) {
+    addSizeCappedPart(articles)
+  }
+
+  return parts
+
+  function addSizeCappedPart(articles: WriterArticleExport[]): void {
+    const partData = {
+      folders: data.folders,
+      articles,
+      categories: data.categories,
+    }
+    const archive = buildWriterTextZip(partData, {
+      ...options,
+      pathContext,
+    })
+
+    if (
+      archive.bytes.byteLength <=
+      (options.maximumPartBytes ?? MAX_EXPORT_PART_BYTES)
+    ) {
+      parts.push({ ...archive, data: partData })
+      return
+    }
+
+    if (articles.length <= 1) {
+      throw createError({
+        statusCode: 413,
+        statusMessage: 'One article is too large to export on this host.',
+      })
+    }
+
+    const midpoint = Math.ceil(articles.length / 2)
+    addSizeCappedPart(articles.slice(0, midpoint))
+    addSizeCappedPart(articles.slice(midpoint))
+  }
+}
+
+function partitionArticlesBySourceSize(
+  articles: WriterArticleExport[],
+  maximumBytes: number,
+): WriterArticleExport[][] {
+  if (articles.length === 0) return [[]]
+
+  const parts: WriterArticleExport[][] = []
+  let current: WriterArticleExport[] = []
+  let currentBytes = 0
+
+  for (const article of articles) {
+    const articleBytes = strToU8(formatArticleText(article)).byteLength + 1024
+
+    if (current.length > 0 && currentBytes + articleBytes > maximumBytes) {
+      parts.push(current)
+      current = []
+      currentBytes = 0
+    }
+
+    current.push(article)
+    currentBytes += articleBytes
+  }
+
+  if (current.length > 0) parts.push(current)
+
+  return parts
 }
 
 /** Loads a complete, consistently ordered export without one huge DB response. */
@@ -395,23 +502,66 @@ export function fullExportFormat(includeDeleted: boolean): string {
     : FULL_TEXT_ZIP_FORMAT
 }
 
-export function includeDeletedFromExportFormat(format: string): boolean {
+export function fullExportPartFormat(
+  includeDeleted: boolean,
+  partIndex: number,
+  partCount: number,
+): string {
+  const base = fullExportFormat(includeDeleted)
+  return `${base};part=${partIndex + 1}/${partCount}`
+}
+
+export function parseFullExportJobFormat(format: string): FullExportJobFormat {
   if (format === FULL_TEXT_ZIP_FORMAT) {
-    return false
+    return { includeDeleted: false, partIndex: 0, partCount: 1 }
   }
 
   if (format === FULL_TEXT_ZIP_WITH_DELETED_FORMAT) {
-    return true
+    return { includeDeleted: true, partIndex: 0, partCount: 1 }
   }
 
-  throw createError({
-    statusCode: 409,
-    statusMessage: 'This export job format is not supported.',
-  })
+  const match = /^(txt-zip(?:\+deleted)?);part=(\d+)\/(\d+)$/.exec(format)
+  const partNumber = Number(match?.[2])
+  const partCount = Number(match?.[3])
+
+  if (
+    !match ||
+    !Number.isInteger(partNumber) ||
+    !Number.isInteger(partCount) ||
+    partNumber < 1 ||
+    partCount < 1 ||
+    partNumber > partCount
+  ) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'This export job format is not supported.',
+    })
+  }
+
+  return {
+    includeDeleted: match[1] === FULL_TEXT_ZIP_WITH_DELETED_FORMAT,
+    partIndex: partNumber - 1,
+    partCount,
+  }
 }
 
-export function createFullExportFileName(now = new Date()): string {
-  return `Writer Export - ${now.toISOString().slice(0, 10)}.zip`
+export function includeDeletedFromExportFormat(format: string): boolean {
+  return parseFullExportJobFormat(format).includeDeleted
+}
+
+export function createFullExportFileName(
+  now = new Date(),
+  partNumber?: number,
+  partCount?: number,
+): string {
+  const date = now.toISOString().slice(0, 10)
+
+  if (partNumber && partCount && partCount > 1) {
+    const width = String(partCount).length
+    return `Writer Export - ${date} - Part ${String(partNumber).padStart(width, '0')} of ${partCount}.zip`
+  }
+
+  return `Writer Export - ${date}.zip`
 }
 
 export function createArticleExportFileName(articleTitle: string): string {
@@ -454,7 +604,9 @@ export function sendAttachmentStream(
   return createByteStream(body)
 }
 
-function buildExportPaths(data: WriterExportData) {
+export function createWriterExportPathContext(
+  data: WriterExportData,
+): WriterExportPathContext {
   const folderPaths = new Map<string, string>()
   const articlePaths = new Map<string, string>()
   const folderWidth = prefixWidth(data.folders.length)

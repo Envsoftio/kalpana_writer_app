@@ -147,7 +147,7 @@ All API routes except login and session discovery require the sealed admin sessi
 
 Run the deterministic export checks with `npm run validate:export`.
 
-The source backup currently produces a full ZIP of roughly 23 MB. That is larger than standard Netlify Functions response limits, so the full-archive route is functional locally but needs one production adjustment: private object storage with a short-lived download URL, a split-archive contract, or a server host with a larger response allowance. Single-article and normal single-folder exports remain suitable for standard function responses.
+The source backup currently produces roughly 23 MB of compressed data. Full backups are therefore split into deterministic ZIP parts capped at 4 MB each so every download remains below Netlify Functions response limits. Download every listed part to retain the complete archive. Single-article and normal single-folder exports remain separate downloads.
 
 ## Deployment
 

@@ -24,9 +24,27 @@ export default defineProtectedEventHandler(async (event, session) => {
   }
 
   try {
-    const includeDeleted = includeDeletedFromExportFormat(String(job.format))
+    const jobFormat = parseFullExportJobFormat(String(job.format))
+    const { includeDeleted } = jobFormat
     const data = await loadWriterExportData(event, { includeDeleted })
-    const archive = buildWriterTextZip(data, { includeDeleted })
+    const archives = buildWriterTextZipParts(data, { includeDeleted })
+
+    if (jobFormat.partCount !== archives.length) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'The archive changed. Please create a new backup.',
+      })
+    }
+
+    const archive = archives[jobFormat.partIndex]
+
+    if (!archive) {
+      throw createError({
+        statusCode: 404,
+        statusMessage: 'Export part not found.',
+      })
+    }
+
     const completedAt = Date.now()
     const fileName =
       typeof job.file_name === 'string' && job.file_name
