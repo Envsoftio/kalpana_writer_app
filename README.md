@@ -1,0 +1,64 @@
+# Pure Writer Web Archive
+
+A private Nuxt application for browsing, editing, searching, and exporting a Pure Writer backup through a Turso/libSQL database.
+
+## Requirements
+
+- Node.js 24 or newer
+- npm 11 or newer
+- Turso CLI access for the database import phase
+
+## Local Setup
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Copy the environment template:
+
+```bash
+cp .env.example .env
+```
+
+Fill in:
+
+- `TURSO_DATABASE_URL`
+- `TURSO_AUTH_TOKEN`
+- `NUXT_SESSION_PASSWORD`
+- `ADMIN_EMAIL`
+
+Start the Nuxt development server:
+
+```bash
+npm run dev
+```
+
+The local app will be available at the URL printed by Nuxt, usually `http://localhost:3000`.
+
+## UI Direction
+
+The application uses Nuxt UI with Tailwind CSS for the component system. Nuxt UI is the default UI foundation because it is Nuxt-native, accessible, themeable, and includes the dashboard, navigation, form, table, overlay, editor, icon, and color-mode pieces this private writing workspace needs.
+
+Theme selection is enabled through Nuxt UI's built-in color-mode integration. The app supports `system`, `light`, and `dark` preferences and stores the choice in local storage.
+
+## Database Source
+
+The original Pure Writer backup in this workspace is:
+
+```txt
+PureWriterBackup-40books-3983articles-0719201745-v28.9.2-Galaxy-S9+.db
+```
+
+Phase 1 imports this SQLite file into Turso and adds the app-owned tables required for authentication, audit logging, and exports.
+
+## Deployment
+
+Netlify builds the SSR Nuxt app with:
+
+```bash
+npm run build
+```
+
+The included `netlify.toml` publishes `.output/public` and uses the Netlify Nitro preset. Configure the environment variables in Netlify before deploying so Turso credentials remain server-side only.

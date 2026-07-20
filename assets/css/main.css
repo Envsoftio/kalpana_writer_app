@@ -1,0 +1,26 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --ui-radius: 0.375rem;
+  --ui-container: 88rem;
+}
+
+html {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: #f8fafc;
+}
+
+.dark body {
+  background: #020617;
+}
