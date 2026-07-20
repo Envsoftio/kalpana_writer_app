@@ -93,6 +93,18 @@ npm run db:verify-production
 
 `db:setup-admin` is idempotent. Rerun it with the same `ADMIN_EMAIL` and a new password to reset the admin login.
 
+## Server Foundation
+
+Server API routes use the utilities in `server/utils`:
+
+- `getDatabaseClient(event)` returns a cached, server-only Turso/libSQL client.
+- `startAdminSession`, `getAdminSession`, and `endAdminSession` manage the sealed admin session.
+- `defineProtectedEventHandler` rejects requests without a valid admin session before running a route handler.
+- `validateBody`, `validateQuery`, and `validateRouteParams` produce consistent validation errors without echoing submitted values.
+- `writeAuditLog` records write/export activity while redacting credential and article-content fields.
+
+Private Turso values live only in Nuxt's private runtime config or the server process environment. Nothing under `runtimeConfig.public` contains database credentials.
+
 ## Deployment
 
 Netlify builds the SSR Nuxt app with:

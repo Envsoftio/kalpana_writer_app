@@ -43,12 +43,12 @@ Scope: Small single-admin Nuxt app using Turso/libSQL and Netlify
 
 ## Phase 2: Server Foundation
 
-- [ ] Create `server/utils/db.ts` for server-only Turso client.
-- [ ] Create `server/utils/auth.ts` for session helpers.
-- [ ] Create `server/utils/validation.ts` for shared request validation.
-- [ ] Create `server/utils/audit.ts` for audit logging.
-- [ ] Create protected-route helper that rejects unauthenticated API calls.
-- [ ] Ensure no Turso credentials are exposed to client runtime config.
+- [x] Create `server/utils/db.ts` for server-only Turso client.
+- [x] Create `server/utils/auth.ts` for session helpers.
+- [x] Create `server/utils/validation.ts` for shared request validation.
+- [x] Create `server/utils/audit.ts` for audit logging.
+- [x] Create protected-route helper that rejects unauthenticated API calls.
+- [x] Ensure no Turso credentials are exposed to client runtime config.
 
 ## Phase 3: Single Admin Auth
 

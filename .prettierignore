@@ -5,3 +5,6 @@ dist
 node_modules
 package-lock.json
 WriterBackup-*.db
+writer.db
+*.db-shm
+*.db-wal
