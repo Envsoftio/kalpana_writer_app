@@ -1,6 +1,6 @@
-# Pure Writer Web Archive
+# Writer Web Archive
 
-A private Nuxt application for browsing, editing, searching, and exporting a Pure Writer backup through a Turso/libSQL database.
+A private Nuxt application for browsing, editing, searching, and exporting a Writer backup through a Turso/libSQL database.
 
 ## Requirements
 
@@ -45,13 +45,53 @@ Theme selection is enabled through Nuxt UI's built-in color-mode integration. Th
 
 ## Database Source
 
-The original Pure Writer backup in this workspace is:
+The original Writer backup in this workspace is:
 
 ```txt
-PureWriterBackup-40books-3983articles-0719201745-v28.9.2-Galaxy-S9+.db
+WriterBackup-40books-3983articles-0719201745-v28.9.2-Galaxy-S9+.db
 ```
 
 Phase 1 imports this SQLite file into Turso and adds the app-owned tables required for authentication, audit logging, and exports.
+
+## Phase 1 Database Setup
+
+Verify the local backup before importing:
+
+```bash
+npm run db:verify-source
+```
+
+Create the Turso database from the SQLite file:
+
+```bash
+turso db create writer --from-file ./WriterBackup-40books-3983articles-0719201745-v28.9.2-Galaxy-S9+.db
+```
+
+Set `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` in `.env`, then verify the imported Writer tables and key row counts:
+
+```bash
+npm run db:verify-import
+```
+
+Create the app-owned tables and create or reset the single admin account:
+
+```bash
+npm run db:setup-admin
+```
+
+For non-interactive setup, provide the password through the shell instead of storing it in `.env`:
+
+```bash
+ADMIN_PASSWORD='replace-with-a-long-password' npm run db:setup-admin
+```
+
+After app tables are created, verify the production database shape and key counts:
+
+```bash
+npm run db:verify-production
+```
+
+`db:setup-admin` is idempotent. Rerun it with the same `ADMIN_EMAIL` and a new password to reset the admin login.
 
 ## Deployment
 

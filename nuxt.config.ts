@@ -10,7 +10,7 @@ export default defineNuxtConfig({
     preference: 'system',
     fallback: 'light',
     classSuffix: '',
-    storageKey: 'pure-writer-theme',
+    storageKey: 'writer-theme',
   },
   runtimeConfig: {
     tursoDatabaseUrl: '',

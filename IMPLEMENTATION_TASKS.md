@@ -1,4 +1,4 @@
-# Pure Writer Web Archive Implementation Tasks
+# Writer Web Archive Implementation Tasks
 
 Status: Draft  
 Date: 2026-07-20  
@@ -27,19 +27,19 @@ Scope: Small single-admin Nuxt app using Turso/libSQL and Netlify
 
 ## Phase 1: Turso Database Setup
 
-- [ ] Create Turso database from the Pure Writer SQLite file.
+- [ ] Create Turso database from the Writer SQLite file.
 - [ ] Verify imported table list matches local backup.
 - [ ] Verify key row counts:
   - `Article`: 4,472
   - `Folder`: 46
   - `Category`: 2
   - `Daily`: 14,541
-- [ ] Add app-owned tables:
+- [x] Add app-owned tables:
   - `app_user`
   - `app_audit_log`
   - `app_export_job`
-- [ ] Add setup/reset admin script.
-- [ ] Add a script to verify production table counts.
+- [x] Add setup/reset admin script.
+- [x] Add a script to verify production table counts.
 
 ## Phase 2: Server Foundation
 

@@ -56,7 +56,7 @@ const articles = [
           </div>
           <div class="min-w-0">
             <p class="truncate text-sm font-semibold text-slate-950 dark:text-white">
-              Pure Writer Archive
+              Writer Archive
             </p>
             <p class="truncate text-xs text-slate-500 dark:text-slate-400">
               Private writing workspace

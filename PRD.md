@@ -1,19 +1,19 @@
-# Pure Writer Web Archive PRD
+# Writer Web Archive PRD
 
 Status: Draft  
 Date: 2026-07-20  
 Target stack: Nuxt, Netlify, Turso/libSQL  
-Source database: `PureWriterBackup-40books-3983articles-0719201745-v28.9.2-Galaxy-S9+.db`
+Source database: `WriterBackup-40books-3983articles-0719201745-v28.9.2-Galaxy-S9+.db`
 
 ## 1. Summary
 
-Build a secure hosted web application for browsing, editing, searching, and exporting a Pure Writer backup database. The application will use the existing SQLite schema and data as the foundation, hosted in Turso as a SQLite-compatible/libSQL database. Nuxt will provide the frontend and server API routes, deployed on Netlify.
+Build a secure hosted web application for browsing, editing, searching, and exporting a Writer backup database. The application will use the existing SQLite schema and data as the foundation, hosted in Turso as a SQLite-compatible/libSQL database. Nuxt will provide the frontend and server API routes, deployed on Netlify.
 
 The app is primarily a private writer workspace. It must expose a polished folder/article writing interface while also supporting full database-table visibility for backup inspection and recovery workflows.
 
 ## 2. Background
 
-The current Pure Writer backup is a SQLite 3 database, approximately 98 MB. Initial inspection found these tables:
+The current Writer backup is a SQLite 3 database, approximately 98 MB. Initial inspection found these tables:
 
 | Table | Rows | Notes |
 | --- | ---: | --- |
@@ -21,12 +21,9 @@ The current Pure Writer backup is a SQLite 3 database, approximately 98 MB. Init
 | `Folder` | 46 | Books/folders |
 | `Category` | 2 | Folder-linked groups/categories |
 | `Daily` | 14,541 | Writing statistics by day/article/folder |
-| `Shortcut` | 10 | Text shortcuts/snippets |
 | `Setting` | 3 | App settings |
 | `UserMessage` | 1 | App message data |
 | `History` | 0 | Article history table |
-| `License` | 0 | License/device data |
-| `android_metadata` | 1 | Android metadata |
 | `room_master_table` | 1 | Android Room metadata |
 
 Important counts:
@@ -49,12 +46,12 @@ Content range:
 
 ## 3. Goals
 
-1. Use the Pure Writer SQLite database structure as the live application data model.
+1. Use the Writer SQLite database structure as the live application data model.
 2. Host the database securely using Turso/libSQL.
 3. Deploy the Nuxt application on Netlify using server routes for all database access.
 4. Provide secure login before any writing data is visible.
 5. Build a fast, ergonomic writer interface focused on folders and articles.
-6. Support read/write operations for articles, folders, categories, shortcuts, and settings where safe.
+6. Support read/write operations for articles, folders, categories, and settings where safe.
 7. Preserve deleted records and allow filtering/restoring where possible.
 8. Provide an all-tables database explorer for inspection.
 9. Support backup downloads as a ZIP containing folder structure and `.txt` article files.
@@ -67,7 +64,7 @@ Content range:
 3. Do not store the live `.db` file in Netlify's filesystem.
 4. Do not make the MVP a public publishing platform.
 5. Do not support simultaneous collaborative editing in the MVP.
-6. Do not guarantee that exported SQLite backups can be re-imported into the Pure Writer Android app in MVP.
+6. Do not guarantee that exported SQLite backups can be re-imported into the Writer Android app in MVP.
 7. Do not include public registration, invitations, teams, or role management in the MVP.
 
 ## 5. Product Scope
@@ -98,9 +95,9 @@ Potential later features:
 2. Article version history.
 3. Markdown preview mode.
 4. Tags and custom collections.
-5. Import another Pure Writer backup.
+5. Import another Writer backup.
 6. Conflict detection for multi-device editing.
-7. Full Pure Writer compatible SQLite export.
+7. Full Writer compatible SQLite export.
 8. Role-based multi-user access.
 9. Password reset email flow.
 
@@ -140,7 +137,7 @@ Nuxt app on Netlify
   | server-only Turso token
   v
 Turso/libSQL
-  imported Pure Writer schema and data
+  imported Writer schema and data
 ```
 
 ### Hosting
@@ -154,7 +151,7 @@ Turso/libSQL will be the live hosted SQLite-compatible database.
 Initial import:
 
 ```bash
-turso db create purewriter --from-file ./PureWriterBackup-40books-3983articles-0719201745-v28.9.2-Galaxy-S9+.db
+turso db create writer --from-file ./WriterBackup-40books-3983articles-0719201745-v28.9.2-Galaxy-S9+.db
 ```
 
 Application connection:
@@ -214,7 +211,7 @@ Authorization:
 
 ## 8. Data Model
 
-### Preserve Existing Pure Writer Tables
+### Preserve Existing Writer Tables
 
 Existing tables should be preserved:
 
@@ -222,17 +219,14 @@ Existing tables should be preserved:
 2. `Folder`
 3. `Category`
 4. `Daily`
-5. `Shortcut`
-6. `Setting`
-7. `UserMessage`
-8. `History`
-9. `License`
-10. `android_metadata`
-11. `room_master_table`
+5. `Setting`
+6. `UserMessage`
+7. `History`
+8. `room_master_table`
 
 ### Add App-Owned Tables
 
-Use a clear prefix to avoid collision with Pure Writer tables.
+Use a clear prefix to avoid collision with Writer tables.
 
 ```sql
 CREATE TABLE app_user (
@@ -281,7 +275,6 @@ CREATE TABLE app_export_job (
 | `Category.folderId -> Folder.id` | Category belongs to folder |
 | `Daily.articleId -> Article.id` | Daily writing stats by article |
 | `Daily.folderId -> Folder.id` | Daily writing stats by folder |
-| `Shortcut.folderId -> Folder.id` | Shortcut optionally scoped to folder |
 
 ## 9. Functional Requirements
 
@@ -345,7 +338,7 @@ CREATE TABLE app_export_job (
 4. Edit article content.
 5. Save updates through server API.
 6. Update `updateTime` on save.
-7. Preserve original Pure Writer metadata fields unless the edited action requires changes.
+7. Preserve original Writer metadata fields unless the edited action requires changes.
 8. Soft delete article.
 9. Restore article.
 10. Move article to another folder.
@@ -402,7 +395,7 @@ Required export: ZIP folder with `.txt` files.
 ZIP structure:
 
 ```txt
-Pure Writer Export/
+Writer Export/
   Folder Name/
     001 - Article Title.txt
     002 - Another Article.txt
@@ -566,7 +559,7 @@ The app should feel like a private writing desk:
 4. Unsaved changes are clearly indicated.
 5. Navigating away with unsaved changes requires confirmation.
 6. Large articles must stay responsive while typing.
-7. The editor should support plain text faithfully, preserving Pure Writer line breaks and spacing.
+7. The editor should support plain text faithfully, preserving Writer line breaks and spacing.
 8. The app should avoid visual noise while writing: no marketing panels, decorative hero sections, or oversized cards.
 9. Common writing actions should be one tap/click away:
    - new article
@@ -591,7 +584,7 @@ The app should feel like a private writing desk:
 
 ## 14. Data Integrity Requirements
 
-1. Preserve Pure Writer IDs.
+1. Preserve Writer IDs.
 2. Prefer soft delete over hard delete.
 3. Wrap multi-step writes in transactions.
 4. Record audit log entries for create/update/delete/restore/export.
@@ -616,7 +609,7 @@ The app should feel like a private writing desk:
 ## 16. Migration and Setup Plan
 
 1. Create Turso account and database.
-2. Import local Pure Writer `.db` into Turso.
+2. Import local Writer `.db` into Turso.
 3. Verify table counts after import.
 4. Apply app-owned auth/audit/export tables.
 5. Create or reset the single admin user with the setup script.
@@ -667,7 +660,7 @@ The app should feel like a private writing desk:
 | --- | --- | --- |
 | Turso/libSQL differences from Android SQLite | Some schema/query behavior may differ | Validate import and all critical writes early |
 | Large content fields | Slow list/search pages | Fetch content only on detail view; add indexes/FTS later |
-| Editing Pure Writer schema directly | App compatibility risk | Preserve existing fields; add app tables with prefix |
+| Editing Writer schema directly | App compatibility risk | Preserve existing fields; add app tables with prefix |
 | Auth misconfiguration | Private writing data exposed | Server-only database token, protected routes, secure cookies |
 | Export timeouts on Netlify | Failed full backup export | Stream ZIP or use background/persisted export jobs |
 | Concurrent writes | Lost edits | Save timestamps, optimistic checks, transactions |
@@ -675,10 +668,10 @@ The app should feel like a private writing desk:
 ## 19. Open Questions
 
 1. Should deleted articles be visible by default in search?
-2. Should article edits update the Pure Writer `count` field automatically?
+2. Should article edits update the Writer `count` field automatically?
 3. Should exports include deleted content by default or require an explicit toggle?
 4. Should MVP include a SQLite/SQL backup download, or only TXT ZIP export?
-5. Is Pure Writer app re-import compatibility required later?
+5. Is Writer app re-import compatibility required later?
 
 ## 20. Success Criteria
 

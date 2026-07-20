@@ -1,9 +1,13 @@
 {
-  "name": "pure-writer-web-archive",
+  "name": "writer-web-archive",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "nuxt build",
+    "db:setup-admin": "node scripts/setup-admin.mjs",
+    "db:verify-import": "node scripts/verify-database.mjs --skip-app-tables",
+    "db:verify-production": "node scripts/verify-database.mjs",
+    "db:verify-source": "node scripts/verify-database.mjs --database-url \"file:./WriterBackup-40books-3983articles-0719201745-v28.9.2-Galaxy-S9+.db\" --skip-app-tables --full-counts",
     "dev": "nuxt dev",
     "format": "prettier --write .",
     "lint": "eslint .",
