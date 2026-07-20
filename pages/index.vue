@@ -395,6 +395,7 @@ onMounted(async () => {
         :selected-id="selectedFolderId"
         :loading="foldersLoading"
         :status="folderStatus"
+        :view-active="mobileView === 'folders'"
         @select="selectFolder"
         @status="changeFolderStatus"
         @create="createFolder"

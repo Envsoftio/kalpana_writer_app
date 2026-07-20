@@ -7,6 +7,7 @@ const props = defineProps<{
   selectedId: string | null
   loading: boolean
   status: 'active' | 'deleted' | 'all'
+  viewActive: boolean
 }>()
 
 const emit = defineEmits<{
@@ -78,11 +79,25 @@ function scrollSelectedFolderIntoView() {
   if (!import.meta.client || props.loading || !props.selectedId) return
 
   nextTick(() => {
-    const selectedRow = folderListElement.value?.querySelector<HTMLElement>(
+    const list = folderListElement.value
+    const selectedRow = list?.querySelector<HTMLElement>(
       '[data-selected="true"]',
     )
 
-    selectedRow?.scrollIntoView({ block: 'nearest' })
+    if (!list || !selectedRow || list.clientHeight === 0) return
+
+    const listBounds = list.getBoundingClientRect()
+    const rowBounds = selectedRow.getBoundingClientRect()
+
+    if (rowBounds.top < listBounds.top || rowBounds.bottom > listBounds.bottom) {
+      list.scrollTop = Math.max(
+        0,
+        list.scrollTop +
+          rowBounds.top -
+          listBounds.top -
+          (list.clientHeight - rowBounds.height) / 2,
+      )
+    }
   })
 }
 
@@ -90,6 +105,7 @@ watch(
   [
     () => props.selectedId,
     () => props.loading,
+    () => props.viewActive,
     () => filteredFolders.value.length,
   ],
   scrollSelectedFolderIntoView,
