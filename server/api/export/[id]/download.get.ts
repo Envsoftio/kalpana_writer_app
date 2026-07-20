@@ -34,20 +34,24 @@ export default defineProtectedEventHandler(async (event, session) => {
         : createFullExportFileName(new Date(Number(job.created_at)))
 
     await withDatabaseWriteTransaction(event, async (transaction) => {
-      await writeAuditLog(event, {
-        action: 'export.txt_zip',
-        entityType: 'app_export_job',
-        entityId: id,
-        metadata: {
-          format: 'txt-zip',
-          includeDeleted,
-          fileName,
-          folderCount: archive.metadata.exportInfo.folderCount,
-          articleCount: archive.metadata.exportInfo.articleCount,
-          categoryCount: archive.metadata.exportInfo.categoryCount,
-          archiveBytes: archive.bytes.byteLength,
+      await writeAuditLog(
+        event,
+        {
+          action: 'export.txt_zip',
+          entityType: 'app_export_job',
+          entityId: id,
+          metadata: {
+            format: 'txt-zip',
+            includeDeleted,
+            fileName,
+            folderCount: archive.metadata.exportInfo.folderCount,
+            articleCount: archive.metadata.exportInfo.articleCount,
+            categoryCount: archive.metadata.exportInfo.categoryCount,
+            archiveBytes: archive.bytes.byteLength,
+          },
         },
-      }, transaction)
+        transaction,
+      )
 
       await transaction.execute({
         sql: `
@@ -59,7 +63,7 @@ export default defineProtectedEventHandler(async (event, session) => {
       })
     })
 
-    return createAttachmentResponse(archive.bytes, {
+    return sendAttachmentStream(event, archive.bytes, {
       contentType: 'application/zip',
       fileName,
     })

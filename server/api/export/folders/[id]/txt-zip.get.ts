@@ -41,7 +41,7 @@ export default defineProtectedEventHandler(async (event) => {
     },
   })
 
-  return createAttachmentResponse(archive.bytes, {
+  return sendAttachmentStream(event, archive.bytes, {
     contentType: 'application/zip',
     fileName,
   })

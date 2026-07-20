@@ -9,6 +9,9 @@ import { apiErrorMessage, isDeleted } from '~/utils/writer'
 
 useHead({ title: 'Library · Writer Archive' })
 
+type FolderStatus = 'active' | 'deleted' | 'all'
+type ArticleStatus = 'active' | 'deleted' | 'all'
+
 const route = useRoute()
 const router = useRouter()
 
@@ -16,11 +19,16 @@ const folders = ref<FolderRecord[]>([])
 const activeFolders = ref<FolderRecord[]>([])
 const articles = ref<ArticleSummary[]>([])
 const article = ref<ArticleRecord | null>(null)
-const folderStatus = ref<'active' | 'deleted' | 'all'>('active')
-const articleStatus = ref<'active' | 'deleted' | 'all'>('active')
+const folderStatus = ref<FolderStatus>(getInitialFolderStatus())
+const articleStatus = ref<ArticleStatus>('active')
 const articleSort = ref('rank')
 const articleSearch = ref('')
-const pagination = ref<Pagination>({ page: 1, pageSize: 50, total: 0, totalPages: 1 })
+const pagination = ref<Pagination>({
+  page: 1,
+  pageSize: 50,
+  total: 0,
+  totalPages: 1,
+})
 const foldersLoading = ref(true)
 const articlesLoading = ref(false)
 const articleLoading = ref(false)
@@ -40,16 +48,28 @@ const selectedFolder = computed(() => {
 })
 const mobileView = computed<'folders' | 'articles' | 'editor'>(() => {
   const requested = route.query.view
-  if (requested === 'folders' || requested === 'articles' || requested === 'editor') return requested
+  if (
+    requested === 'folders' ||
+    requested === 'articles' ||
+    requested === 'editor'
+  )
+    return requested
   if (selectedArticleId.value) return 'editor'
   if (selectedFolderId.value) return 'articles'
   return 'folders'
 })
 const editorFolders = computed(() => {
   const map = new Map<string, FolderRecord>()
-  for (const folder of [...activeFolders.value, ...folders.value]) map.set(folder.id, folder)
+  for (const folder of [...activeFolders.value, ...folders.value])
+    map.set(folder.id, folder)
   return [...map.values()]
 })
+
+function getInitialFolderStatus(): FolderStatus {
+  const status = route.query.folderStatus
+
+  return status === 'deleted' || status === 'all' ? status : 'active'
+}
 
 async function loadFolders(selectFirst = false) {
   foldersLoading.value = true
@@ -70,7 +90,10 @@ async function loadFolders(selectFirst = false) {
     }
 
     if (selectFirst && !selectedFolderId.value && folders.value[0]) {
-      await setRoute({ folder: folders.value[0].id, article: undefined, view: undefined }, true)
+      await setRoute(
+        { folder: folders.value[0].id, article: undefined, view: undefined },
+        true,
+      )
     }
   } catch (error) {
     pageError.value = apiErrorMessage(error, 'Folders could not be loaded.')
@@ -140,7 +163,11 @@ async function loadArticle() {
 }
 
 async function setRoute(
-  values: { folder?: string; article?: string; view?: 'folders' | 'articles' | 'editor' },
+  values: {
+    folder?: string
+    article?: string
+    view?: 'folders' | 'articles' | 'editor'
+  },
   replace = false,
 ) {
   const query = { ...route.query, ...values }
@@ -166,15 +193,25 @@ async function createFolder(value: { name: string; description: string }) {
     })
     folderStatus.value = 'active'
     await loadFolders()
-    await setRoute({ folder: response.folder.id, article: undefined, view: 'articles' })
+    await setRoute({
+      folder: response.folder.id,
+      article: undefined,
+      view: 'articles',
+    })
   } catch (error) {
     pageError.value = apiErrorMessage(error, 'The folder could not be created.')
   }
 }
 
-async function updateFolder(id: string, value: { name: string; description: string }) {
+async function updateFolder(
+  id: string,
+  value: { name: string; description: string },
+) {
   try {
-    await $fetch(`/api/folders/${encodeURIComponent(id)}`, { method: 'PATCH', body: value })
+    await $fetch(`/api/folders/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: value,
+    })
     await loadFolders()
   } catch (error) {
     pageError.value = apiErrorMessage(error, 'The folder could not be updated.')
@@ -182,17 +219,32 @@ async function updateFolder(id: string, value: { name: string; description: stri
 }
 
 async function changeFolderDeleted(folder: FolderRecord, restore: boolean) {
-  if (!restore && !confirm(`Move “${folder.name}” to deleted items? Its articles will remain recoverable.`)) return
+  if (
+    !restore &&
+    !confirm(
+      `Move “${folder.name}” to deleted items? Its articles will remain recoverable.`,
+    )
+  )
+    return
   try {
-    await $fetch(`/api/folders/${encodeURIComponent(folder.id)}/${restore ? 'restore' : 'delete'}`, {
-      method: 'POST',
-    })
+    await $fetch(
+      `/api/folders/${encodeURIComponent(folder.id)}/${restore ? 'restore' : 'delete'}`,
+      {
+        method: 'POST',
+      },
+    )
     await loadFolders()
     if (!folders.value.some((item) => item.id === selectedFolderId.value)) {
-      await setRoute({ folder: undefined, article: undefined, view: 'folders' }, true)
+      await setRoute(
+        { folder: undefined, article: undefined, view: 'folders' },
+        true,
+      )
     }
   } catch (error) {
-    pageError.value = apiErrorMessage(error, `The folder could not be ${restore ? 'restored' : 'deleted'}.`)
+    pageError.value = apiErrorMessage(
+      error,
+      `The folder could not be ${restore ? 'restored' : 'deleted'}.`,
+    )
   }
 }
 
@@ -201,19 +253,29 @@ async function createArticle() {
   try {
     const response = await $fetch<{ article: ArticleRecord }>('/api/articles', {
       method: 'POST',
-      body: { folderId: selectedFolderId.value, title: 'Untitled', content: '' },
+      body: {
+        folderId: selectedFolderId.value,
+        title: 'Untitled',
+        content: '',
+      },
     })
     await loadArticles(1)
     await setRoute({ article: response.article.id, view: 'editor' })
   } catch (error) {
-    pageError.value = apiErrorMessage(error, 'The article could not be created.')
+    pageError.value = apiErrorMessage(
+      error,
+      'The article could not be created.',
+    )
   }
 }
 
 async function handleArticleSaved(saved: ArticleRecord) {
   article.value = saved
   if (saved.folderId !== selectedFolderId.value) {
-    await setRoute({ folder: saved.folderId, article: saved.id, view: 'editor' }, true)
+    await setRoute(
+      { folder: saved.folderId, article: saved.id, view: 'editor' },
+      true,
+    )
   }
   await loadArticles(pagination.value.page)
   await loadFolders()
@@ -225,12 +287,12 @@ async function handleArticleDeleted(saved: ArticleRecord) {
   await loadFolders()
 }
 
-async function changeFolderStatus(value: 'active' | 'deleted' | 'all') {
+async function changeFolderStatus(value: FolderStatus) {
   folderStatus.value = value
   await loadFolders()
 }
 
-async function changeArticleStatus(value: 'active' | 'deleted' | 'all') {
+async function changeArticleStatus(value: ArticleStatus) {
   articleStatus.value = value
   cancelArticleSearchTimer()
   await loadArticles(1)
@@ -255,14 +317,19 @@ function cancelArticleSearchTimer() {
 
 function saveScroll(name: string) {
   if (!import.meta.client) return
-  const element = document.querySelector<HTMLElement>(`.${name === 'folders' ? 'folder-list' : 'article-list'}.scroll-region`)
-  if (element) sessionStorage.setItem(`writer-scroll:${name}`, String(element.scrollTop))
+  const element = document.querySelector<HTMLElement>(
+    `.${name === 'folders' ? 'folder-list' : 'article-list'}.scroll-region`,
+  )
+  if (element)
+    sessionStorage.setItem(`writer-scroll:${name}`, String(element.scrollTop))
 }
 
 function restoreScroll(name: string) {
   if (!import.meta.client) return
   nextTick(() => {
-    const element = document.querySelector<HTMLElement>(`.${name === 'folders' ? 'folder-list' : 'article-list'}.scroll-region`)
+    const element = document.querySelector<HTMLElement>(
+      `.${name === 'folders' ? 'folder-list' : 'article-list'}.scroll-region`,
+    )
     const saved = Number(sessionStorage.getItem(`writer-scroll:${name}`))
     if (element && Number.isFinite(saved)) element.scrollTop = saved
   })
@@ -278,10 +345,22 @@ watch(selectedArticleId, () => void loadArticle())
 onBeforeUnmount(cancelArticleSearchTimer)
 
 onMounted(async () => {
+  const hasFolderRoute = Boolean(selectedFolderId.value)
+
   await loadFolders(true)
+
+  if (
+    selectedFolderId.value &&
+    !selectedFolder.value &&
+    folderStatus.value === 'active'
+  ) {
+    folderStatus.value = 'all'
+    await loadFolders()
+  }
+
   if (selectedFolderId.value) await loadArticles(1)
   if (selectedArticleId.value) await loadArticle()
-  restoreScroll('folders')
+  if (!hasFolderRoute) restoreScroll('folders')
 })
 </script>
 
@@ -290,7 +369,13 @@ onMounted(async () => {
     <div v-if="pageError" class="page-alert" role="alert">
       <UIcon name="i-lucide-triangle-alert" />
       <span>{{ pageError }}</span>
-      <UButton icon="i-lucide-x" color="neutral" variant="ghost" aria-label="Dismiss" @click="pageError = ''" />
+      <UButton
+        icon="i-lucide-x"
+        color="neutral"
+        variant="ghost"
+        aria-label="Dismiss"
+        @click="pageError = ''"
+      />
     </div>
 
     <div class="library-grid" :data-mobile-view="mobileView">

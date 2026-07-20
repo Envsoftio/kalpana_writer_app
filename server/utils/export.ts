@@ -5,8 +5,7 @@ const ARCHIVE_ROOT = 'Writer Export'
 const EXPORT_VERSION = 1
 const MAX_EXPORT_NAME_LENGTH = 120
 const ARTICLE_PAGE_SIZE = 200
-const WINDOWS_RESERVED_NAME =
-  /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i
+const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i
 // C0 controls are intentionally rejected because archive paths must be portable.
 // eslint-disable-next-line no-control-regex
 const UNSAFE_EXPORT_CHARACTER = /[\u0000-\u001f\u007f<>:"/\\|?*]+/g
@@ -195,9 +194,7 @@ export function buildWriterTextZip(
   files[`${ARCHIVE_ROOT}/_metadata/export-info.json`] = encodeJson(
     metadata.exportInfo,
   )
-  files[`${ARCHIVE_ROOT}/_metadata/folders.json`] = encodeJson(
-    metadata.folders,
-  )
+  files[`${ARCHIVE_ROOT}/_metadata/folders.json`] = encodeJson(metadata.folders)
   files[`${ARCHIVE_ROOT}/_metadata/articles.json`] = encodeJson(
     metadata.articles,
   )
@@ -218,7 +215,9 @@ export async function loadWriterExportData(
 ): Promise<WriterExportData> {
   const client = getDatabaseClient(event)
   const folderPredicate = options.folderId ? 'AND f.id = ?' : ''
-  const activeFolderPredicate = options.includeDeleted ? '' : 'AND f.deleted = 0'
+  const activeFolderPredicate = options.includeDeleted
+    ? ''
+    : 'AND f.deleted = 0'
   const folderArgs = options.folderId ? [options.folderId] : []
 
   const folderResult = await client.execute({
@@ -437,6 +436,24 @@ export function createAttachmentResponse(
   })
 }
 
+export function sendAttachmentStream(
+  event: H3Event,
+  body: Uint8Array<ArrayBuffer>,
+  options: { contentType: string; fileName: string },
+): ReadableStream<Uint8Array<ArrayBuffer>> {
+  setAttachmentResponseHeader(event, 'Cache-Control', 'private, no-store')
+  setAttachmentResponseHeader(
+    event,
+    'Content-Disposition',
+    contentDisposition(options.fileName),
+  )
+  setAttachmentResponseHeader(event, 'Content-Length', String(body.byteLength))
+  setAttachmentResponseHeader(event, 'Content-Type', options.contentType)
+  setAttachmentResponseHeader(event, 'X-Content-Type-Options', 'nosniff')
+
+  return createByteStream(body)
+}
+
 function buildExportPaths(data: WriterExportData) {
   const folderPaths = new Map<string, string>()
   const articlePaths = new Map<string, string>()
@@ -509,11 +526,58 @@ function contentDisposition(fileName: string): string {
     .normalize('NFKD')
     .replace(/[^\x20-\x7e]+/g, '_')
     .replace(/["\\]/g, '_')
-  const encodedName = encodeURIComponent(safeName).replace(/['()*]/g, (value) =>
-    `%${value.charCodeAt(0).toString(16).toUpperCase()}`,
+  const encodedName = encodeURIComponent(safeName).replace(
+    /['()*]/g,
+    (value) => `%${value.charCodeAt(0).toString(16).toUpperCase()}`,
   )
 
   return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodedName}`
+}
+
+function createByteStream(
+  body: Uint8Array<ArrayBuffer>,
+): ReadableStream<Uint8Array<ArrayBuffer>> {
+  const chunkSize = 64 * 1024
+  let offset = 0
+
+  return new ReadableStream({
+    pull(controller) {
+      if (offset >= body.byteLength) {
+        controller.close()
+        return
+      }
+
+      const nextOffset = Math.min(offset + chunkSize, body.byteLength)
+      controller.enqueue(body.subarray(offset, nextOffset))
+      offset = nextOffset
+    },
+  })
+}
+
+function setAttachmentResponseHeader(
+  event: H3Event,
+  name: string,
+  value: string,
+): void {
+  const compatibleEvent = event as unknown as AttachmentResponseEvent
+
+  if (compatibleEvent.node?.res?.setHeader) {
+    compatibleEvent.node.res.setHeader(name, value)
+    return
+  }
+
+  compatibleEvent.res?.headers?.set(name, value)
+}
+
+interface AttachmentResponseEvent {
+  node?: {
+    res?: {
+      setHeader(name: string, value: string): void
+    }
+  }
+  res?: {
+    headers?: Headers
+  }
 }
 
 function mapFolderRow(row: Record<string, unknown>): WriterFolderExport {

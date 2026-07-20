@@ -23,6 +23,7 @@ const showEdit = ref(false)
 const name = ref('')
 const description = ref('')
 const folderSearch = ref('')
+const folderListElement = ref<HTMLElement | null>(null)
 
 const filteredFolders = computed(() => {
   const query = folderSearch.value.trim().toLocaleLowerCase()
@@ -57,7 +58,10 @@ function startEdit() {
 
 function submitCreate() {
   if (!name.value.trim()) return
-  emit('create', { name: name.value.trim(), description: description.value.trim() })
+  emit('create', {
+    name: name.value.trim(),
+    description: description.value.trim(),
+  })
   showCreate.value = false
 }
 
@@ -69,6 +73,30 @@ function submitEdit() {
   })
   showEdit.value = false
 }
+
+function scrollSelectedFolderIntoView() {
+  if (!import.meta.client || props.loading || !props.selectedId) return
+
+  nextTick(() => {
+    const selectedRow = folderListElement.value?.querySelector<HTMLElement>(
+      '[data-selected="true"]',
+    )
+
+    selectedRow?.scrollIntoView({ block: 'nearest' })
+  })
+}
+
+watch(
+  [
+    () => props.selectedId,
+    () => props.loading,
+    () => filteredFolders.value.length,
+  ],
+  scrollSelectedFolderIntoView,
+  { flush: 'post' },
+)
+
+onMounted(scrollSelectedFolderIntoView)
 </script>
 
 <template>
@@ -107,10 +135,18 @@ function submitEdit() {
       />
     </div>
 
-    <form v-if="showCreate || showEdit" class="inline-editor" @submit.prevent="showCreate ? submitCreate() : submitEdit()">
+    <form
+      v-if="showCreate || showEdit"
+      class="inline-editor"
+      @submit.prevent="showCreate ? submitCreate() : submitEdit()"
+    >
       <strong>{{ showCreate ? 'New folder' : 'Edit folder' }}</strong>
       <UInput v-model="name" placeholder="Folder name" autofocus required />
-      <UTextarea v-model="description" placeholder="Description (optional)" :rows="3" />
+      <UTextarea
+        v-model="description"
+        placeholder="Description (optional)"
+        :rows="3"
+      />
       <div class="flex justify-end gap-2">
         <UButton
           label="Cancel"
@@ -119,7 +155,11 @@ function submitEdit() {
           size="sm"
           @click="showCreate = showEdit = false"
         />
-        <UButton type="submit" :label="showCreate ? 'Create' : 'Save'" size="sm" />
+        <UButton
+          type="submit"
+          :label="showCreate ? 'Create' : 'Save'"
+          size="sm"
+        />
       </div>
     </form>
 
@@ -138,19 +178,26 @@ function submitEdit() {
       <span>No folders match “{{ folderSearch.trim() }}”.</span>
     </div>
 
-    <div v-else class="folder-list scroll-region">
+    <div v-else ref="folderListElement" class="folder-list scroll-region">
       <button
         v-for="folder in filteredFolders"
         :key="folder.id"
         class="folder-row"
         :class="{ selected: folder.id === selectedId }"
+        :data-selected="folder.id === selectedId"
         @click="emit('select', folder)"
       >
         <span class="folder-icon"><UIcon name="i-lucide-folder" /></span>
         <span class="min-w-0 flex-1">
           <span class="row-title">
             {{ folder.name }}
-            <UBadge v-if="isDeleted(folder.deleted)" color="error" variant="subtle" size="sm">Deleted</UBadge>
+            <UBadge
+              v-if="isDeleted(folder.deleted)"
+              color="error"
+              variant="subtle"
+              size="sm"
+              >Deleted</UBadge
+            >
           </span>
           <span class="row-meta">{{ folder.articleCount ?? 0 }} articles</span>
         </span>
