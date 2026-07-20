@@ -81,7 +81,7 @@ export default defineProtectedEventHandler(async (event, session) => {
     metadata.articles.map((article) => [article.id, article.path]),
   )
 
-  setHeader(event, 'Cache-Control', 'private, no-store')
+  setCompatibleResponseHeader(event, 'Cache-Control', 'private, no-store')
 
   if (page === jobFormat.pageCount) {
     await client.execute({
