@@ -34,6 +34,7 @@ const articlesLoading = ref(false)
 const articleLoading = ref(false)
 const pageError = ref('')
 let articleSearchTimer: ReturnType<typeof setTimeout> | undefined
+let folderRequestId = 0
 let articleRequestId = 0
 
 const selectedFolderId = computed(() =>
@@ -72,20 +73,29 @@ function getInitialFolderStatus(): FolderStatus {
 }
 
 async function loadFolders(selectFirst = false) {
+  const requestId = ++folderRequestId
+  const requestedStatus = folderStatus.value
+
   foldersLoading.value = true
   pageError.value = ''
   try {
     const response = await $fetch<{ folders: FolderRecord[] }>('/api/folders', {
-      query: { status: folderStatus.value },
+      query: { status: requestedStatus },
     })
+
+    if (requestId !== folderRequestId) return
+
     folders.value = response.folders
 
-    if (folderStatus.value === 'active') {
+    if (requestedStatus === 'active') {
       activeFolders.value = response.folders
     } else if (activeFolders.value.length === 0) {
       const active = await $fetch<{ folders: FolderRecord[] }>('/api/folders', {
         query: { status: 'active' },
       })
+
+      if (requestId !== folderRequestId) return
+
       activeFolders.value = active.folders
     }
 
@@ -96,9 +106,10 @@ async function loadFolders(selectFirst = false) {
       )
     }
   } catch (error) {
+    if (requestId !== folderRequestId) return
     pageError.value = apiErrorMessage(error, 'Folders could not be loaded.')
   } finally {
-    foldersLoading.value = false
+    if (requestId === folderRequestId) foldersLoading.value = false
   }
 }
 
