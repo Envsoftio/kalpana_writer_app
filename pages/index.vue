@@ -19,11 +19,14 @@ const article = ref<ArticleRecord | null>(null)
 const folderStatus = ref<'active' | 'deleted' | 'all'>('active')
 const articleStatus = ref<'active' | 'deleted' | 'all'>('active')
 const articleSort = ref('rank')
+const articleSearch = ref('')
 const pagination = ref<Pagination>({ page: 1, pageSize: 50, total: 0, totalPages: 1 })
 const foldersLoading = ref(true)
 const articlesLoading = ref(false)
 const articleLoading = ref(false)
 const pageError = ref('')
+let articleSearchTimer: ReturnType<typeof setTimeout> | undefined
+let articleRequestId = 0
 
 const selectedFolderId = computed(() =>
   typeof route.query.folder === 'string' ? route.query.folder : null,
@@ -77,9 +80,12 @@ async function loadFolders(selectFirst = false) {
 }
 
 async function loadArticles(page = 1) {
+  const requestId = ++articleRequestId
+
   if (!selectedFolderId.value) {
     articles.value = []
     article.value = null
+    articlesLoading.value = false
     return
   }
 
@@ -95,15 +101,20 @@ async function loadArticles(page = 1) {
         pageSize: 50,
         status: articleStatus.value,
         sort: articleSort.value,
+        q: articleSearch.value.trim() || undefined,
       },
     })
+
+    if (requestId !== articleRequestId) return
+
     articles.value = response.items
     pagination.value = response.pagination
     restoreScroll('articles')
   } catch (error) {
+    if (requestId !== articleRequestId) return
     pageError.value = apiErrorMessage(error, 'Articles could not be loaded.')
   } finally {
-    articlesLoading.value = false
+    if (requestId === articleRequestId) articlesLoading.value = false
   }
 }
 
@@ -221,12 +232,25 @@ async function changeFolderStatus(value: 'active' | 'deleted' | 'all') {
 
 async function changeArticleStatus(value: 'active' | 'deleted' | 'all') {
   articleStatus.value = value
+  cancelArticleSearchTimer()
   await loadArticles(1)
 }
 
 async function changeSort(value: string) {
   articleSort.value = value
+  cancelArticleSearchTimer()
   await loadArticles(1)
+}
+
+function changeArticleSearch(value: string) {
+  articleSearch.value = value
+  cancelArticleSearchTimer()
+  articleSearchTimer = setTimeout(() => void loadArticles(1), 300)
+}
+
+function cancelArticleSearchTimer() {
+  if (articleSearchTimer) clearTimeout(articleSearchTimer)
+  articleSearchTimer = undefined
 }
 
 function saveScroll(name: string) {
@@ -244,8 +268,14 @@ function restoreScroll(name: string) {
   })
 }
 
-watch(selectedFolderId, () => void loadArticles(1))
+watch(selectedFolderId, () => {
+  articleSearch.value = ''
+  cancelArticleSearchTimer()
+  void loadArticles(1)
+})
 watch(selectedArticleId, () => void loadArticle())
+
+onBeforeUnmount(cancelArticleSearchTimer)
 
 onMounted(async () => {
   await loadFolders(true)
@@ -284,12 +314,14 @@ onMounted(async () => {
         :loading="articlesLoading"
         :status="articleStatus"
         :sort="articleSort"
+        :search="articleSearch"
         :pagination="pagination"
         @back="setRoute({ view: 'folders' })"
         @select="selectArticle"
         @create="createArticle"
         @status="changeArticleStatus"
         @sort="changeSort"
+        @search="changeArticleSearch"
         @page="loadArticles"
       />
 

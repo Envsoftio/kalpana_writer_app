@@ -22,6 +22,19 @@ const showCreate = ref(false)
 const showEdit = ref(false)
 const name = ref('')
 const description = ref('')
+const folderSearch = ref('')
+
+const filteredFolders = computed(() => {
+  const query = folderSearch.value.trim().toLocaleLowerCase()
+
+  if (!query) return props.folders
+
+  return props.folders.filter((folder) =>
+    [folder.name, folder.description]
+      .filter((value): value is string => Boolean(value))
+      .some((value) => value.toLocaleLowerCase().includes(query)),
+  )
+})
 
 const selectedFolder = computed(
   () => props.folders.find((folder) => folder.id === props.selectedId) ?? null,
@@ -84,6 +97,16 @@ function submitEdit() {
       </button>
     </div>
 
+    <div class="pane-search">
+      <UInput
+        v-model="folderSearch"
+        type="search"
+        icon="i-lucide-search"
+        placeholder="Search folders"
+        aria-label="Search folders by name or description"
+      />
+    </div>
+
     <form v-if="showCreate || showEdit" class="inline-editor" @submit.prevent="showCreate ? submitCreate() : submitEdit()">
       <strong>{{ showCreate ? 'New folder' : 'Edit folder' }}</strong>
       <UInput v-model="name" placeholder="Folder name" autofocus required />
@@ -110,9 +133,14 @@ function submitEdit() {
       <span>No {{ status === 'all' ? '' : status }} folders found.</span>
     </div>
 
+    <div v-else-if="filteredFolders.length === 0" class="pane-state">
+      <UIcon name="i-lucide-search-x" />
+      <span>No folders match “{{ folderSearch.trim() }}”.</span>
+    </div>
+
     <div v-else class="folder-list scroll-region">
       <button
-        v-for="folder in folders"
+        v-for="folder in filteredFolders"
         :key="folder.id"
         class="folder-row"
         :class="{ selected: folder.id === selectedId }"

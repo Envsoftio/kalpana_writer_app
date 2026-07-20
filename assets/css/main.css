@@ -420,6 +420,14 @@ button:disabled,
   flex: 1;
 }
 
+.pane-search {
+  padding: 9px 9px 0;
+}
+
+.folder-pane .pane-search {
+  padding: 6px 12px 8px;
+}
+
 .list-controls {
   display: grid;
   grid-template-columns: 1fr 100px;

@@ -2,13 +2,14 @@
 import type { ArticleSummary, FolderRecord, Pagination } from '#shared/types/writer'
 import { formatWriterDate, isDeleted } from '~/utils/writer'
 
-defineProps<{
+const props = defineProps<{
   folder: FolderRecord | null
   articles: ArticleSummary[]
   selectedId: string | null
   loading: boolean
   status: 'active' | 'deleted' | 'all'
   sort: string
+  search: string
   pagination: Pagination
 }>()
 
@@ -18,8 +19,14 @@ const emit = defineEmits<{
   create: []
   status: [value: 'active' | 'deleted' | 'all']
   sort: [value: string]
+  search: [value: string]
   page: [value: number]
 }>()
+
+const searchModel = computed({
+  get: () => props.search,
+  set: (value: string) => emit('search', value),
+})
 
 const sortOptions = [
   { value: 'rank', label: 'Folder order' },
@@ -54,6 +61,17 @@ const sortOptions = [
       />
     </header>
 
+    <div class="pane-search">
+      <UInput
+        v-model="searchModel"
+        type="search"
+        icon="i-lucide-search"
+        placeholder="Search article titles"
+        aria-label="Search article titles in this folder"
+        :disabled="!folder"
+      />
+    </div>
+
     <div class="list-controls">
       <select
         :value="sort"
@@ -86,8 +104,9 @@ const sortOptions = [
       Loading articles…
     </div>
     <div v-else-if="articles.length === 0" class="pane-state grow">
-      <UIcon name="i-lucide-file-text" />
-      No articles match this filter.
+      <UIcon :name="search.trim() ? 'i-lucide-search-x' : 'i-lucide-file-text'" />
+      <span v-if="search.trim()">No article titles match “{{ search.trim() }}”.</span>
+      <span v-else>No articles match this filter.</span>
     </div>
 
     <div v-else class="article-list scroll-region">

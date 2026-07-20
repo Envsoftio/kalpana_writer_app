@@ -8,6 +8,7 @@ const querySchema = paginationQuerySchema.extend({
     .default('rank'),
   direction: z.enum(['asc', 'desc']).optional(),
   categoryId: z.union([entityIdSchema, z.literal('uncategorized')]).optional(),
+  q: z.string().trim().max(200).optional(),
 })
 
 const sortColumns = {
@@ -44,6 +45,11 @@ export default defineProtectedEventHandler(async (event) => {
   } else if (query.categoryId) {
     conditions.push('a.categoryId = ?')
     args.push(query.categoryId)
+  }
+
+  if (query.q) {
+    conditions.push('INSTR(LOWER(a.title), LOWER(?)) > 0')
+    args.push(query.q)
   }
 
   const whereSql = conditions.join(' AND ')
