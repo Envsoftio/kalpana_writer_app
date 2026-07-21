@@ -10,7 +10,7 @@ const querySchema = paginationQuerySchema.extend({
   categoryId: z.union([entityIdSchema, z.literal('uncategorized')]).optional(),
   q: z.string().trim().max(200).optional(),
 })
-const MAX_FOLDER_ARTICLE_PAGES = 100
+const FOLDER_ARTICLE_TOTAL_PAGES = 100
 
 const sortColumns = {
   rank: 'a.rank',
@@ -116,10 +116,7 @@ export default defineProtectedEventHandler(async (event) => {
       page: query.page,
       pageSize: query.pageSize,
       total,
-      totalPages: Math.min(
-        MAX_FOLDER_ARTICLE_PAGES,
-        Math.ceil(total / query.pageSize),
-      ),
+      totalPages: total > 0 ? FOLDER_ARTICLE_TOTAL_PAGES : 1,
     },
   }
 })

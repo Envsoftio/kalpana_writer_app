@@ -2,17 +2,20 @@
 import type { FolderRecord } from '#shared/types/writer'
 import { isDeleted } from '~/utils/writer'
 
+type FolderSort = 'rank' | 'name' | 'updated' | 'created' | 'articles'
+type FolderStatus = 'active' | 'deleted' | 'all'
+
 const props = defineProps<{
   folders: FolderRecord[]
   selectedId: string | null
   loading: boolean
-  status: 'active' | 'deleted' | 'all'
+  status: FolderStatus
   viewActive: boolean
 }>()
 
 const emit = defineEmits<{
   select: [folder: FolderRecord]
-  status: [value: 'active' | 'deleted' | 'all']
+  status: [value: FolderStatus]
   create: [value: { name: string; description: string }]
   update: [id: string, value: { name: string; description: string }]
   remove: [folder: FolderRecord]
@@ -24,23 +27,61 @@ const showEdit = ref(false)
 const name = ref('')
 const description = ref('')
 const folderSearch = ref('')
+const folderSort = ref<FolderSort>('rank')
 const folderListElement = ref<HTMLElement | null>(null)
+
+const folderSortOptions: Array<{ value: FolderSort; label: string }> = [
+  { value: 'rank', label: 'Folder order' },
+  { value: 'name', label: 'Name' },
+  { value: 'updated', label: 'Recently updated' },
+  { value: 'created', label: 'Recently created' },
+  { value: 'articles', label: 'Article count' },
+]
+const folderStatusOptions: Array<{ value: FolderStatus; label: string }> = [
+  { value: 'active', label: 'Active' },
+  { value: 'deleted', label: 'Deleted' },
+  { value: 'all', label: 'All' },
+]
 
 const filteredFolders = computed(() => {
   const query = folderSearch.value.trim().toLocaleLowerCase()
+  const matchingFolders = query
+    ? props.folders.filter((folder) =>
+        [folder.name, folder.description]
+          .filter((value): value is string => Boolean(value))
+          .some((value) => value.toLocaleLowerCase().includes(query)),
+      )
+    : props.folders
 
-  if (!query) return props.folders
-
-  return props.folders.filter((folder) =>
-    [folder.name, folder.description]
-      .filter((value): value is string => Boolean(value))
-      .some((value) => value.toLocaleLowerCase().includes(query)),
-  )
+  return [...matchingFolders].sort(compareFolders)
 })
 
 const selectedFolder = computed(
   () => props.folders.find((folder) => folder.id === props.selectedId) ?? null,
 )
+
+function compareFolders(first: FolderRecord, second: FolderRecord): number {
+  switch (folderSort.value) {
+    case 'name':
+      return compareText(first.name, second.name) || compareText(first.id, second.id)
+    case 'updated':
+      return second.updateTime - first.updateTime || compareText(first.name, second.name)
+    case 'created':
+      return second.createdTime - first.createdTime || compareText(first.name, second.name)
+    case 'articles':
+      return (
+        (second.articleCount ?? 0) - (first.articleCount ?? 0) ||
+        compareText(first.name, second.name)
+      )
+    case 'rank':
+    default:
+      return first.rank - second.rank || compareText(first.name, second.name) || compareText(first.id, second.id)
+  }
+}
+
+function compareText(first: string, second: string): number {
+  return first.localeCompare(second, undefined, { sensitivity: 'base' })
+}
 
 function startCreate() {
   name.value = ''
@@ -130,15 +171,34 @@ onMounted(scrollSelectedFolderIntoView)
       />
     </header>
 
-    <div class="segmented-control" aria-label="Folder status filter">
-      <button
-        v-for="option in ['active', 'deleted', 'all'] as const"
-        :key="option"
-        :class="{ active: status === option }"
-        @click="emit('status', option)"
+    <div class="list-controls folder-controls">
+      <select
+        v-model="folderSort"
+        class="native-select"
+        aria-label="Sort folders"
       >
-        {{ option }}
-      </button>
+        <option
+          v-for="option in folderSortOptions"
+          :key="option.value"
+          :value="option.value"
+        >
+          {{ option.label }}
+        </option>
+      </select>
+      <select
+        :value="status"
+        class="native-select"
+        aria-label="Folder status"
+        @change="emit('status', ($event.target as HTMLSelectElement).value as FolderStatus)"
+      >
+        <option
+          v-for="option in folderStatusOptions"
+          :key="option.value"
+          :value="option.value"
+        >
+          {{ option.label }}
+        </option>
+      </select>
     </div>
 
     <div class="pane-search">

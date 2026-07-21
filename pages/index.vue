@@ -30,7 +30,7 @@ const articleSort = ref('rank')
 const articleSearch = ref('')
 const pagination = ref<Pagination>({
   page: 1,
-  pageSize: 50,
+  pageSize: 10,
   total: 0,
   totalPages: 1,
 })
