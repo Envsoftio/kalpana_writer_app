@@ -138,7 +138,7 @@ async function loadArticles(page = 1) {
     }>(`/api/folders/${encodeURIComponent(selectedFolderId.value)}/articles`, {
       query: {
         page,
-        pageSize: 50,
+        pageSize: 10,
         status: articleStatus.value,
         sort: articleSort.value,
         q: articleSearch.value.trim() || undefined,
