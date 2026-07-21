@@ -30,7 +30,7 @@ const articleSort = ref('rank')
 const articleSearch = ref('')
 const pagination = ref<Pagination>({
   page: 1,
-  pageSize: 10,
+  pageSize: 100,
   total: 0,
   totalPages: 1,
 })
@@ -138,7 +138,7 @@ async function loadArticles(page = 1) {
     }>(`/api/folders/${encodeURIComponent(selectedFolderId.value)}/articles`, {
       query: {
         page,
-        pageSize: 10,
+        pageSize: 100,
         status: articleStatus.value,
         sort: articleSort.value,
         q: articleSearch.value.trim() || undefined,
