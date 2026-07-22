@@ -15,6 +15,7 @@ const props = defineProps<{
   article: ArticleRecord | null
   folders: FolderRecord[]
   loading: boolean
+  highlight?: string
 }>()
 
 const emit = defineEmits<{
@@ -34,16 +35,23 @@ const findOpen = ref(false)
 const findQuery = ref('')
 const activeFindIndex = ref(-1)
 const contentEditor = ref<HTMLTextAreaElement | null>(null)
-const recoveryDraft = ref<{ title: string; content: string; savedAt: number } | null>(null)
+const editorSurface = ref<HTMLElement | null>(null)
+const recoveryDraft = ref<{
+  title: string
+  content: string
+  savedAt: number
+} | null>(null)
 const movedFolderId = ref('')
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 let loadingArticle = true
 let editRevision = 0
+let appliedHighlightKey = ''
 
 const dirty = computed(
   () =>
     !!props.article &&
-    (title.value !== props.article.title || content.value !== props.article.content),
+    (title.value !== props.article.title ||
+      content.value !== props.article.content),
 )
 const wordCount = computed(() => countWords(content.value))
 const characterCount = computed(() => content.value.length)
@@ -65,6 +73,33 @@ const findMatches = computed(() => {
   return matches
 })
 const findCount = computed(() => findMatches.value.length)
+const readerSegments = computed(() => {
+  if (findMatches.value.length === 0 || !findQuery.value) {
+    return [{ text: content.value, matchIndex: null }]
+  }
+
+  const segments: Array<{ text: string; matchIndex: number | null }> = []
+  let offset = 0
+
+  for (const [matchIndex, start] of findMatches.value.entries()) {
+    if (start > offset) {
+      segments.push({
+        text: content.value.slice(offset, start),
+        matchIndex: null,
+      })
+    }
+
+    const end = start + findQuery.value.length
+    segments.push({ text: content.value.slice(start, end), matchIndex })
+    offset = end
+  }
+
+  if (offset < content.value.length) {
+    segments.push({ text: content.value.slice(offset), matchIndex: null })
+  }
+
+  return segments
+})
 const stateLabel = computed(() => {
   const labels: Record<SaveState, string> = {
     saved: 'Saved',
@@ -87,7 +122,9 @@ const stateIcon = computed(() => {
 })
 
 function folderNameFor(folderId: string): string {
-  return props.folders.find((folder) => folder.id === folderId)?.name ?? folderId
+  return (
+    props.folders.find((folder) => folder.id === folderId)?.name ?? folderId
+  )
 }
 
 async function goToMatch(direction: 1 | -1) {
@@ -97,15 +134,55 @@ async function goToMatch(direction: 1 | -1) {
     (activeFindIndex.value + direction + findMatches.value.length) %
     findMatches.value.length
 
-  if (mode.value !== 'edit') {
-    mode.value = 'edit'
-    await nextTick()
+  await nextTick()
+
+  if (mode.value === 'read') {
+    const match = editorSurface.value?.querySelector<HTMLElement>(
+      `[data-find-match="${activeFindIndex.value}"]`,
+    )
+    match?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    return
   }
 
   const start = findMatches.value[activeFindIndex.value] ?? 0
   const editor = contentEditor.value
   editor?.focus()
   editor?.setSelectionRange(start, start + findQuery.value.length)
+}
+
+function closeFind() {
+  findOpen.value = false
+  findQuery.value = ''
+  activeFindIndex.value = -1
+}
+
+function toggleFind() {
+  if (findOpen.value) {
+    closeFind()
+    return
+  }
+
+  findOpen.value = true
+}
+
+async function applyRequestedHighlight() {
+  const articleId = props.article?.id
+  const requested = props.highlight?.trim()
+
+  if (!articleId || !requested) return
+
+  const requestKey = `${articleId}:${requested}`
+  if (requestKey === appliedHighlightKey) return
+
+  appliedHighlightKey = requestKey
+  findOpen.value = true
+  findQuery.value = requested
+  activeFindIndex.value = -1
+  await nextTick()
+
+  if (findMatches.value.length > 0) {
+    await goToMatch(1)
+  }
 }
 
 function draftKey(id: string) {
@@ -115,12 +192,16 @@ function draftKey(id: string) {
 function loadArticle(article: ArticleRecord | null) {
   loadingArticle = true
   editRevision = 0
+  appliedHighlightKey = ''
   clearTimeout(saveTimer)
   recoveryDraft.value = null
   title.value = article?.title ?? ''
   content.value = article?.content ?? ''
   movedFolderId.value = article?.folderId ?? ''
   mode.value = 'read'
+  findOpen.value = false
+  findQuery.value = ''
+  activeFindIndex.value = -1
   saveState.value = 'saved'
   errorMessage.value = ''
 
@@ -152,8 +233,9 @@ function loadArticle(article: ArticleRecord | null) {
     }
   }
 
-  nextTick(() => {
+  nextTick(async () => {
     loadingArticle = false
+    await applyRequestedHighlight()
   })
 }
 
@@ -163,7 +245,11 @@ function persistDraft(): boolean {
   try {
     localStorage.setItem(
       draftKey(props.article.id),
-      JSON.stringify({ title: title.value, content: content.value, savedAt: Date.now() }),
+      JSON.stringify({
+        title: title.value,
+        content: content.value,
+        savedAt: Date.now(),
+      }),
     )
     return true
   } catch {
@@ -239,14 +325,23 @@ async function save() {
     saveTimer = setTimeout(() => void save(), 350)
     return false
   } catch (error) {
-    saveState.value = import.meta.client && !navigator.onLine ? 'offline' : 'error'
-    errorMessage.value = apiErrorMessage(error, 'Your changes could not be saved.')
+    saveState.value =
+      import.meta.client && !navigator.onLine ? 'offline' : 'error'
+    errorMessage.value = apiErrorMessage(
+      error,
+      'Your changes could not be saved.',
+    )
     return false
   }
 }
 
 async function moveArticle() {
-  if (!props.article || !movedFolderId.value || movedFolderId.value === props.article.folderId) return
+  if (
+    !props.article ||
+    !movedFolderId.value ||
+    movedFolderId.value === props.article.folderId
+  )
+    return
   if (dirty.value && !(await save())) return
 
   try {
@@ -256,7 +351,10 @@ async function moveArticle() {
     )
     emit('saved', response.article)
   } catch (error) {
-    errorMessage.value = apiErrorMessage(error, 'The article could not be moved.')
+    errorMessage.value = apiErrorMessage(
+      error,
+      'The article could not be moved.',
+    )
     movedFolderId.value = props.article.folderId
   }
 }
@@ -264,7 +362,11 @@ async function moveArticle() {
 async function toggleDeleted() {
   if (!props.article) return
   const deleted = isDeleted(props.article.deleted)
-  if (!deleted && !confirm(`Move “${props.article.title || 'Untitled'}” to deleted items?`)) return
+  if (
+    !deleted &&
+    !confirm(`Move “${props.article.title || 'Untitled'}” to deleted items?`)
+  )
+    return
 
   try {
     const action = deleted ? 'restore' : 'delete'
@@ -274,7 +376,10 @@ async function toggleDeleted() {
     )
     emit('removed', response.article)
   } catch (error) {
-    errorMessage.value = apiErrorMessage(error, `The article could not be ${deleted ? 'restored' : 'deleted'}.`)
+    errorMessage.value = apiErrorMessage(
+      error,
+      `The article could not be ${deleted ? 'restored' : 'deleted'}.`,
+    )
   }
 }
 
@@ -296,7 +401,8 @@ watch(
 watch([title, content], () => {
   if (loadingArticle || !props.article || !dirty.value) return
   editRevision += 1
-  saveState.value = import.meta.client && !navigator.onLine ? 'offline' : 'unsaved'
+  saveState.value =
+    import.meta.client && !navigator.onLine ? 'offline' : 'unsaved'
   persistDraft()
   clearTimeout(saveTimer)
   saveTimer = setTimeout(() => void save(), 1400)
@@ -305,6 +411,19 @@ watch([title, content], () => {
 watch(findQuery, () => {
   activeFindIndex.value = -1
 })
+
+watch(
+  () => props.highlight,
+  (highlight) => {
+    appliedHighlightKey = ''
+
+    if (highlight?.trim()) {
+      void applyRequestedHighlight()
+    } else {
+      closeFind()
+    }
+  },
+)
 
 onMounted(() => {
   window.addEventListener('beforeunload', handleBeforeUnload)
@@ -356,11 +475,18 @@ onBeforeRouteLeave(() => {
           @click="emit('back')"
         />
         <div class="mode-switch">
-          <button :class="{ active: mode === 'read' }" @click="mode = 'read'">Read</button>
-          <button :class="{ active: mode === 'edit' }" @click="mode = 'edit'">Edit</button>
+          <button :class="{ active: mode === 'read' }" @click="mode = 'read'">
+            Read
+          </button>
+          <button :class="{ active: mode === 'edit' }" @click="mode = 'edit'">
+            Edit
+          </button>
         </div>
         <span class="save-state" :class="saveState">
-          <UIcon :name="stateIcon" :class="{ 'animate-spin': saveState === 'saving' }" />
+          <UIcon
+            :name="stateIcon"
+            :class="{ 'animate-spin': saveState === 'saving' }"
+          />
           {{ stateLabel }}
         </span>
         <div class="toolbar-spacer" />
@@ -369,7 +495,7 @@ onBeforeRouteLeave(() => {
           color="neutral"
           variant="ghost"
           aria-label="Find in article"
-          @click="findOpen = !findOpen"
+          @click="toggleFind"
         />
         <UButton
           :icon="focusMode ? 'i-lucide-minimize-2' : 'i-lucide-maximize-2'"
@@ -427,23 +553,41 @@ onBeforeRouteLeave(() => {
           aria-label="Next match"
           @click="goToMatch(1)"
         />
-        <UButton icon="i-lucide-x" color="neutral" variant="ghost" aria-label="Close search" @click="findOpen = false" />
+        <UButton
+          icon="i-lucide-x"
+          color="neutral"
+          variant="ghost"
+          aria-label="Close search"
+          @click="closeFind"
+        />
       </div>
 
       <div v-if="recoveryDraft" class="recovery-banner">
         <UIcon name="i-lucide-history" />
         <span class="min-w-0 flex-1">
-          A local draft from {{ formatWriterDate(recoveryDraft.savedAt, true) }} is available.
+          A local draft from
+          {{ formatWriterDate(recoveryDraft.savedAt, true) }} is available.
         </span>
-        <UButton label="Recover" size="sm" color="warning" @click="recoverDraft" />
-        <UButton label="Discard" size="sm" color="neutral" variant="ghost" @click="discardDraft" />
+        <UButton
+          label="Recover"
+          size="sm"
+          color="warning"
+          @click="recoverDraft"
+        />
+        <UButton
+          label="Discard"
+          size="sm"
+          color="neutral"
+          variant="ghost"
+          @click="discardDraft"
+        />
       </div>
 
       <p v-if="errorMessage" class="editor-error" role="alert">
         <UIcon name="i-lucide-triangle-alert" /> {{ errorMessage }}
       </p>
 
-      <div class="editor-surface scroll-region">
+      <div ref="editorSurface" class="editor-surface scroll-region">
         <template v-if="mode === 'edit'">
           <input
             v-model="title"
@@ -462,8 +606,23 @@ onBeforeRouteLeave(() => {
         </template>
         <article v-else class="reader">
           <h1>{{ title || 'Untitled' }}</h1>
-          <p class="reader-meta">Updated {{ formatWriterDate(article.updateTime, true) }}</p>
-          <div class="reader-content">{{ content }}</div>
+          <p class="reader-meta">
+            Updated {{ formatWriterDate(article.updateTime, true) }}
+          </p>
+          <div class="reader-content">
+            <template
+              v-for="(segment, segmentIndex) in readerSegments"
+              :key="`${segmentIndex}:${segment.matchIndex ?? 'text'}`"
+            >
+              <mark
+                v-if="segment.matchIndex !== null"
+                class="reader-find-match"
+                :class="{ active: segment.matchIndex === activeFindIndex }"
+                :data-find-match="segment.matchIndex"
+                >{{ segment.text }}</mark
+              ><span v-else>{{ segment.text }}</span>
+            </template>
+          </div>
         </article>
       </div>
 
@@ -478,7 +637,11 @@ onBeforeRouteLeave(() => {
           <UIcon name="i-lucide-download" /> Export TXT
         </a>
         <UButton
-          :icon="isDeleted(article.deleted) ? 'i-lucide-rotate-ccw' : 'i-lucide-trash-2'"
+          :icon="
+            isDeleted(article.deleted)
+              ? 'i-lucide-rotate-ccw'
+              : 'i-lucide-trash-2'
+          "
           :label="isDeleted(article.deleted) ? 'Restore' : 'Delete'"
           :color="isDeleted(article.deleted) ? 'success' : 'error'"
           variant="ghost"
@@ -493,22 +656,62 @@ onBeforeRouteLeave(() => {
             <p class="eyebrow">Article</p>
             <h2>Metadata</h2>
           </div>
-          <UButton icon="i-lucide-x" color="neutral" variant="ghost" aria-label="Close metadata" @click="metadataOpen = false" />
+          <UButton
+            icon="i-lucide-x"
+            color="neutral"
+            variant="ghost"
+            aria-label="Close metadata"
+            @click="metadataOpen = false"
+          />
         </div>
         <dl class="metadata-list">
-          <div><dt>ID</dt><dd>{{ article.id }}</dd></div>
-          <div><dt>Folder</dt><dd>{{ folderNameFor(article.folderId) }}</dd></div>
-          <div><dt>Category</dt><dd>{{ article.categoryId || 'None' }}</dd></div>
-          <div><dt>Created</dt><dd>{{ formatWriterDate(article.createTime, true) }}</dd></div>
-          <div><dt>Updated</dt><dd>{{ formatWriterDate(article.updateTime, true) }}</dd></div>
-          <div><dt>Stored count</dt><dd>{{ Number(article.count ?? 0).toLocaleString() }}</dd></div>
-          <div><dt>Rank</dt><dd>{{ article.rank }}</dd></div>
-          <div><dt>Status</dt><dd>{{ isDeleted(article.deleted) ? 'Deleted' : 'Active' }}</dd></div>
+          <div>
+            <dt>ID</dt>
+            <dd>{{ article.id }}</dd>
+          </div>
+          <div>
+            <dt>Folder</dt>
+            <dd>{{ folderNameFor(article.folderId) }}</dd>
+          </div>
+          <div>
+            <dt>Category</dt>
+            <dd>{{ article.categoryId || 'None' }}</dd>
+          </div>
+          <div>
+            <dt>Created</dt>
+            <dd>{{ formatWriterDate(article.createTime, true) }}</dd>
+          </div>
+          <div>
+            <dt>Updated</dt>
+            <dd>{{ formatWriterDate(article.updateTime, true) }}</dd>
+          </div>
+          <div>
+            <dt>Stored count</dt>
+            <dd>{{ Number(article.count ?? 0).toLocaleString() }}</dd>
+          </div>
+          <div>
+            <dt>Rank</dt>
+            <dd>{{ article.rank }}</dd>
+          </div>
+          <div>
+            <dt>Status</dt>
+            <dd>{{ isDeleted(article.deleted) ? 'Deleted' : 'Active' }}</dd>
+          </div>
         </dl>
         <label class="field-label">
           <span>Move to folder</span>
-          <select v-model="movedFolderId" class="native-select" @change="moveArticle">
-            <option v-for="folder in folders.filter((item) => !isDeleted(item.deleted))" :key="folder.id" :value="folder.id">
+          <select
+            v-model="movedFolderId"
+            class="native-select"
+            @change="moveArticle"
+          >
+            <option
+              v-for="folder in folders.filter(
+                (item) => !isDeleted(item.deleted),
+              )"
+              :key="folder.id"
+              :value="folder.id"
+            >
               {{ folder.name }}
             </option>
           </select>

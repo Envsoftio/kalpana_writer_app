@@ -244,6 +244,16 @@ CREATE TABLE app_user (
   deleted INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE app_refresh_token (
+  token_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL DEFAULT 'admin',
+  password_updated_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  last_used_at INTEGER NOT NULL,
+  revoked_at INTEGER
+);
+
 CREATE TABLE app_audit_log (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL DEFAULT 'admin',

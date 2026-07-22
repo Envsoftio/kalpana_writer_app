@@ -67,6 +67,11 @@ const selectedFolderId = computed(() =>
 const selectedArticleId = computed(() =>
   typeof route.query.article === 'string' ? route.query.article : null,
 )
+const articleHighlight = computed(() =>
+  typeof route.query.highlight === 'string'
+    ? route.query.highlight.trim().slice(0, 200)
+    : '',
+)
 const selectedFolder = computed(() => {
   const combined = [...folders.value, ...activeFolders.value]
   return combined.find((folder) => folder.id === selectedFolderId.value) ?? null
@@ -286,6 +291,7 @@ async function loadInitialLibrary() {
       folder?: string
       article?: string
       view?: 'folders' | 'articles' | 'editor'
+      highlight?: string
     } = {}
 
     if (response.selectedFolderId !== selectedFolderId.value) {
@@ -295,6 +301,7 @@ async function loadInitialLibrary() {
     if (requestedArticleId && !response.article) {
       routeValues.article = undefined
       routeValues.view = response.selectedFolderId ? 'articles' : 'folders'
+      routeValues.highlight = undefined
     } else if (response.article) {
       routeValues.folder = response.article.folderId
       routeValues.article = response.article.id
@@ -433,6 +440,7 @@ async function setRoute(
     folder?: string
     article?: string
     view?: 'folders' | 'articles' | 'editor'
+    highlight?: string
   },
   replace = false,
 ) {
@@ -442,12 +450,21 @@ async function setRoute(
 
 async function selectFolder(folder: FolderRecord) {
   saveScroll('folders')
-  await setRoute({ folder: folder.id, article: undefined, view: 'articles' })
+  await setRoute({
+    folder: folder.id,
+    article: undefined,
+    view: 'articles',
+    highlight: undefined,
+  })
 }
 
 async function selectArticle(selected: ArticleSummary) {
   saveScroll('articles')
-  await setRoute({ article: selected.id, view: 'editor' })
+  await setRoute({
+    article: selected.id,
+    view: 'editor',
+    highlight: undefined,
+  })
 }
 
 async function createFolder(value: { name: string; description: string }) {
@@ -681,6 +698,7 @@ onMounted(async () => {
         :article="article"
         :folders="editorFolders.filter((folder) => !isDeleted(folder.deleted))"
         :loading="articleLoading"
+        :highlight="articleHighlight"
         @back="setRoute({ view: 'articles' })"
         @saved="handleArticleSaved"
         @removed="handleArticleDeleted"

@@ -110,12 +110,15 @@ function restoreSearchFilters(): void {
 }
 
 function articleLink(item: SearchResult) {
+  const highlight = query.value.trim()
+
   return {
     path: '/',
     query: {
       folder: item.folderId,
       article: item.id,
       view: 'editor',
+      ...(highlight && item.matchSource !== 'title' ? { highlight } : {}),
       ...(includeDeleted.value ? { folderStatus: 'all' } : {}),
     },
   }
