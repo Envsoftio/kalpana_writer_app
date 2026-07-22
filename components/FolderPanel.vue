@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import type { FolderRecord } from '#shared/types/writer'
-import { isDeleted } from '~/utils/writer'
+import {
+  isDeleted,
+  readWriterPreference,
+  writeWriterPreference,
+} from '~/utils/writer'
 
 type FolderSort = 'rank' | 'name' | 'updated' | 'created' | 'articles'
 type FolderStatus = 'active' | 'deleted' | 'all'
+
+const FOLDER_FILTERS_KEY = 'writer:filters:folders:v1'
 
 const props = defineProps<{
   folders: FolderRecord[]
@@ -83,6 +89,29 @@ function compareText(first: string, second: string): number {
   return first.localeCompare(second, undefined, { sensitivity: 'base' })
 }
 
+function restoreFolderFilters(): void {
+  const stored = readWriterPreference(FOLDER_FILTERS_KEY)
+
+  if (
+    stored &&
+    typeof stored === 'object' &&
+    'sort' in stored &&
+    isFolderSort(stored.sort)
+  ) {
+    folderSort.value = stored.sort
+  }
+}
+
+function isFolderSort(value: unknown): value is FolderSort {
+  return (
+    value === 'rank' ||
+    value === 'name' ||
+    value === 'updated' ||
+    value === 'created' ||
+    value === 'articles'
+  )
+}
+
 function startCreate() {
   name.value = ''
   description.value = ''
@@ -152,8 +181,14 @@ watch(
   scrollSelectedFolderIntoView,
   { flush: 'post' },
 )
+watch(folderSort, (sort) => {
+  writeWriterPreference(FOLDER_FILTERS_KEY, { sort })
+})
 
-onMounted(scrollSelectedFolderIntoView)
+onMounted(() => {
+  restoreFolderFilters()
+  scrollSelectedFolderIntoView()
+})
 </script>
 
 <template>

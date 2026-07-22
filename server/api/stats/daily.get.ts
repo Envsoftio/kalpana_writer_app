@@ -1,3 +1,4 @@
+import type { InStatement, ResultSet } from '@libsql/client'
 import { z } from 'zod'
 import {
   getTableColumns,
@@ -59,16 +60,17 @@ export default defineProtectedEventHandler(async (event) => {
   ])
   const inputtingSql = durationExpression(inputtingColumn)
   const foregroundSql = durationExpression(foregroundColumn)
-  const availableResult = await client.execute(`
-    SELECT MIN(${dateSql}) AS availableFrom, MAX(${dateSql}) AS availableTo
-    FROM ${quoteIdentifier(dailyTable.name)} d
-  `)
+  const availabilityStatement = `
+      SELECT MIN(${dateSql}) AS availableFrom, MAX(${dateSql}) AS availableTo
+      FROM ${quoteIdentifier(dailyTable.name)} d
+    `
+  const availableResult = await client.execute(availabilityStatement)
   const availableFrom = nullableString(availableResult.rows[0]?.availableFrom)
   const availableTo = nullableString(availableResult.rows[0]?.availableTo)
   const rangeFrom = query.from ?? availableFrom
   const rangeTo = query.to ?? availableTo
   const { whereSql, args } = buildDateFilter(dateSql, rangeFrom, rangeTo)
-  const totalsResult = await client.execute({
+  const totalsStatement: InStatement = {
     sql: `
       SELECT
         COALESCE(SUM(${wordSql}), 0) AS words,
@@ -80,8 +82,8 @@ export default defineProtectedEventHandler(async (event) => {
       ${whereSql}
     `,
     args,
-  })
-  const byDateResult = await client.execute({
+  }
+  const byDateStatement: InStatement = {
     sql: `
       SELECT
         ${dateSql} AS date,
@@ -95,9 +97,8 @@ export default defineProtectedEventHandler(async (event) => {
       ORDER BY date ASC
     `,
     args,
-  })
-  const topFolders = await loadTopFolders({
-    client,
+  }
+  const topFoldersStatement = createTopFoldersStatement({
     tables: tables.map((table) => table.name),
     dailyTable: dailyTable.name,
     columnNames,
@@ -106,6 +107,15 @@ export default defineProtectedEventHandler(async (event) => {
     args,
     limit: query.top,
   })
+  const statements: InStatement[] = [totalsStatement, byDateStatement]
+
+  if (topFoldersStatement) statements.push(topFoldersStatement)
+
+  const results = await client.batch(statements)
+  const totalsResult = results[0]!
+  const byDateResult = results[1]!
+  const topFoldersResult = results[2]
+  const topFolders = topFoldersResult ? mapTopFolders(topFoldersResult) : []
   const totals = totalsResult.rows[0]
 
   return {
@@ -136,7 +146,6 @@ export default defineProtectedEventHandler(async (event) => {
 })
 
 interface TopFolderOptions {
-  client: ReturnType<typeof getDatabaseClient>
   tables: string[]
   dailyTable: string
   columnNames: string[]
@@ -146,7 +155,9 @@ interface TopFolderOptions {
   limit: number
 }
 
-async function loadTopFolders(options: TopFolderOptions) {
+function createTopFoldersStatement(
+  options: TopFolderOptions,
+): InStatement | null {
   const folderIdColumn = findColumn(options.columnNames, [
     'folderId',
     'folder_id',
@@ -157,7 +168,7 @@ async function loadTopFolders(options: TopFolderOptions) {
   ])
 
   if (!folderIdColumn && !folderTitleColumn) {
-    return []
+    return null
   }
 
   const folderTable = options.tables.find(
@@ -177,7 +188,7 @@ async function loadTopFolders(options: TopFolderOptions) {
   const joinSql = canJoinFolder
     ? `LEFT JOIN ${quoteIdentifier(folderTable!)} f ON f.id = d.${quoteIdentifier(folderIdColumn!)}`
     : ''
-  const result = await options.client.execute({
+  return {
     sql: `
       SELECT
         ${folderIdSql} AS folderId,
@@ -192,8 +203,10 @@ async function loadTopFolders(options: TopFolderOptions) {
       LIMIT ?
     `,
     args: [...options.args, options.limit],
-  })
+  }
+}
 
+function mapTopFolders(result: ResultSet) {
   return result.rows.map((row) => ({
     folderId: nullableString(row.folderId),
     folderName: String(row.folderName),

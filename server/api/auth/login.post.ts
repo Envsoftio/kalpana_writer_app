@@ -47,6 +47,13 @@ export default defineEventHandler(async (event) => {
     passwordUpdatedAt: admin.passwordUpdatedAt,
   })
 
+  try {
+    await startAdminRefreshToken(event)
+  } catch (error) {
+    await endAdminSession(event)
+    throw error
+  }
+
   return {
     authenticated: true,
     user: session.user,

@@ -85,6 +85,12 @@ Create the app-owned tables and create or reset the single admin account:
 npm run db:setup-admin
 ```
 
+Apply the idempotent Library query indexes without changing the admin account:
+
+```bash
+npm run db:optimize
+```
+
 For non-interactive setup, provide the password through the shell instead of storing it in `.env`:
 
 ```bash
@@ -97,7 +103,7 @@ After app tables are created, verify the production database shape and key count
 npm run db:verify-production
 ```
 
-`db:setup-admin` is idempotent. Rerun it with the same `ADMIN_EMAIL` and a new password to reset the admin login.
+`db:setup-admin` is idempotent and also applies the performance indexes. Rerun it with the same `ADMIN_EMAIL` and a new password to reset the admin login. Use `db:optimize` when only the indexes need to be applied.
 
 ## Recovery Process
 
@@ -124,7 +130,7 @@ Expected source counts are `Article=4472`, `Folder=46`, `Category=2`, and `Daily
 Server API routes use the utilities in `server/utils`:
 
 - `getDatabaseClient(event)` returns a cached, server-only Turso/libSQL client.
-- `startAdminSession`, `getAdminSession`, and `endAdminSession` manage the sealed admin session.
+- `startAdminSession`, `getAdminSession`, and `endAdminSession` manage the sealed admin session. A hashed, revocable refresh token renews expired access sessions automatically and uses a rolling 90-day expiry for active writers.
 - `defineProtectedEventHandler` rejects requests without a valid admin session before running a route handler.
 - `validateBody`, `validateQuery`, and `validateRouteParams` produce consistent validation errors without echoing submitted values.
 - `writeAuditLog` records write/export activity while redacting credential and article-content fields.
@@ -141,7 +147,7 @@ Private Turso values live only in Nuxt's private runtime config or the server pr
 - A read-only, allowlisted table explorer with truncated grid cells, protected full-row detail, and credential-field redaction.
 - Full TXT ZIP, portable SQLite `.db`, single-folder ZIP, and single-article TXT exports with stable ordering and reconstruction metadata.
 
-All API routes except login and session discovery require the sealed admin session. There is intentionally no signup endpoint.
+All API routes except login and session discovery require the sealed admin session. Expired access sessions are transparently renewed from the HttpOnly refresh cookie; logout or an admin password change invalidates renewal. There is intentionally no signup endpoint.
 
 ## Export Validation and Hosting Limit
 

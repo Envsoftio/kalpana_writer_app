@@ -1,3 +1,4 @@
+import type { InStatement, ResultSet } from '@libsql/client'
 import type { H3Event } from 'h3'
 
 const ARTICLE_SUMMARY_LENGTH = 220
@@ -8,7 +9,7 @@ export interface ArticleDestination {
   categoryId: string | null
 }
 
-interface ServerArticleRecord {
+export interface ServerArticleRecord {
   id: string
   title: string
   content: string
@@ -60,18 +61,26 @@ const ARTICLE_DETAIL_SQL = `
   LIMIT 1
 `
 
+export function createArticleDetailStatement(id: string): InStatement {
+  return { sql: ARTICLE_DETAIL_SQL, args: [id] }
+}
+
+export function articleFromResult(
+  result: ResultSet,
+): ServerArticleRecord | null {
+  const row = result.rows[0]
+
+  return row ? mapArticleRow(row) : null
+}
+
 export async function getArticleById(
   event: H3Event,
   id: string,
   database: DatabaseExecutor = getDatabaseClient(event),
 ): Promise<ServerArticleRecord | null> {
-  const result = await database.execute({
-    sql: ARTICLE_DETAIL_SQL,
-    args: [id],
-  })
-  const row = result.rows[0]
+  const result = await database.execute(createArticleDetailStatement(id))
 
-  return row ? mapArticleRow(row) : null
+  return articleFromResult(result)
 }
 
 export async function requireArticleById(

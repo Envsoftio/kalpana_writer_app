@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto'
+import type { InStatement, Row } from '@libsql/client'
 import type { H3Event } from 'h3'
 import { z } from 'zod'
 
@@ -72,8 +73,9 @@ export interface WriterFolderRecord {
   articleCount: number
 }
 
-const FOLDER_SELECT = `
-  SELECT
+export type WriterFolderStatus = 'active' | 'deleted' | 'all'
+
+const FOLDER_COLUMNS = `
     folder.id AS id,
     folder.name AS name,
     folder.createdTime AS createdTime,
@@ -96,7 +98,12 @@ const FOLDER_SELECT = `
     folder.tags AS tags,
     folder.tagsUpdateTime AS tagsUpdateTime,
     folder.rankMode AS rankMode,
-    folder.rankModeUpdateTime AS rankModeUpdateTime,
+    folder.rankModeUpdateTime AS rankModeUpdateTime
+`
+
+const FOLDER_DETAIL_SELECT = `
+  SELECT
+    ${FOLDER_COLUMNS},
     (
       SELECT COUNT(*)
       FROM Article AS article
@@ -105,23 +112,52 @@ const FOLDER_SELECT = `
   FROM Folder AS folder
 `
 
-export async function listFolders(
-  event: H3Event,
-  status: 'active' | 'deleted' | 'all',
-): Promise<WriterFolderRecord[]> {
+const FOLDER_LIST_SELECT = `
+  SELECT
+    ${FOLDER_COLUMNS},
+    COALESCE(articleCounts.articleCount, 0) AS articleCount
+  FROM Folder AS folder
+  LEFT JOIN (
+    SELECT article.folderId, COUNT(*) AS articleCount
+    FROM Article AS article
+    WHERE article.deleted = 0
+    GROUP BY article.folderId
+  ) AS articleCounts ON articleCounts.folderId = folder.id
+`
+
+export function createFolderListStatement(
+  status: WriterFolderStatus,
+): InStatement {
   const filter =
     status === 'all'
       ? ''
       : status === 'active'
         ? 'WHERE folder.deleted = 0'
         : 'WHERE folder.deleted = 1'
-  const result = await getDatabaseClient(event).execute(`
-    ${FOLDER_SELECT}
-    ${filter}
-    ORDER BY folder.rank ASC, folder.name COLLATE NOCASE ASC, folder.id ASC
-  `)
 
-  return result.rows.map(mapFolderRow)
+  return {
+    sql: `
+      ${FOLDER_LIST_SELECT}
+      ${filter}
+      ORDER BY folder.rank ASC, folder.name COLLATE NOCASE ASC, folder.id ASC
+    `,
+    args: [],
+  }
+}
+
+export async function listFolders(
+  event: H3Event,
+  status: WriterFolderStatus,
+): Promise<WriterFolderRecord[]> {
+  const result = await getDatabaseClient(event).execute(
+    createFolderListStatement(status),
+  )
+
+  return mapFolderRows(result.rows)
+}
+
+export function mapFolderRows(rows: readonly Row[]): WriterFolderRecord[] {
+  return rows.map(mapFolderRow)
 }
 
 export async function getFolderById(
@@ -130,7 +166,7 @@ export async function getFolderById(
   database: DatabaseExecutor = getDatabaseClient(event),
 ): Promise<WriterFolderRecord | null> {
   const result = await database.execute({
-    sql: `${FOLDER_SELECT} WHERE folder.id = ? LIMIT 1`,
+    sql: `${FOLDER_DETAIL_SELECT} WHERE folder.id = ? LIMIT 1`,
     args: [id],
   })
   const row = result.rows[0]

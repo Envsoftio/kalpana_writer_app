@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "nuxt build",
+    "db:optimize": "node scripts/optimize-database.mjs",
     "db:setup-admin": "node scripts/setup-admin.mjs",
     "db:verify-import": "node scripts/verify-database.mjs --skip-app-tables",
     "db:verify-production": "node scripts/verify-database.mjs",

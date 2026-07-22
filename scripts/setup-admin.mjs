@@ -35,6 +35,10 @@ const client = createDatabaseClient({
 
 try {
   const schemaStatements = await executeSqlFile(client, 'db/app-schema.sql')
+  const performanceStatements = await executeSqlFile(
+    client,
+    'db/performance-indexes.sql',
+  )
   const now = Date.now()
   const passwordHash = await bcrypt.hash(password, 12)
 
@@ -81,6 +85,7 @@ try {
   })
 
   console.log(`Applied ${schemaStatements} app schema statements.`)
+  console.log(`Applied ${performanceStatements} performance indexes.`)
   console.log(`Admin account is ready for ${email}.`)
 } finally {
   await closeDatabaseClient(client)

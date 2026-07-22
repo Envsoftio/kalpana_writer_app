@@ -8,13 +8,30 @@ import type {
 import {
   apiErrorMessage,
   apiErrorStatusCode,
+  clearWriterPreference,
   isDeleted,
+  readWriterPreference,
+  writeWriterPreference,
 } from '~/utils/writer'
 
 useHead({ title: 'Library · Writer Archive' })
 
 type FolderStatus = 'active' | 'deleted' | 'all'
 type ArticleStatus = 'active' | 'deleted' | 'all'
+type ArticleSort = 'rank' | 'updated' | 'created' | 'title' | 'count'
+
+interface LibraryResponse {
+  folders: FolderRecord[]
+  activeFolders: FolderRecord[]
+  folderStatus: FolderStatus
+  selectedFolderId: string | null
+  items: ArticleSummary[]
+  pagination: Pagination
+  article: ArticleRecord | null
+}
+
+const LIBRARY_FILTERS_KEY = 'writer:filters:library:v1'
+const LAST_OPENED_ARTICLE_KEY = 'writer:last-opened-article:v1'
 
 const route = useRoute()
 const router = useRouter()
@@ -26,7 +43,7 @@ const articles = ref<ArticleSummary[]>([])
 const article = ref<ArticleRecord | null>(null)
 const folderStatus = ref<FolderStatus>(getInitialFolderStatus())
 const articleStatus = ref<ArticleStatus>('active')
-const articleSort = ref('rank')
+const articleSort = ref<ArticleSort>('rank')
 const articleSearch = ref('')
 const pagination = ref<Pagination>({
   page: 1,
@@ -42,6 +59,7 @@ let articleSearchTimer: ReturnType<typeof setTimeout> | undefined
 let folderRequestId = 0
 let articleRequestId = 0
 let articleDetailRequestId = 0
+let initializingLibrary = true
 
 const selectedFolderId = computed(() =>
   typeof route.query.folder === 'string' ? route.query.folder : null,
@@ -73,9 +91,107 @@ const editorFolders = computed(() => {
 })
 
 function getInitialFolderStatus(): FolderStatus {
+  return getRouteFolderStatus() ?? 'active'
+}
+
+function getRouteFolderStatus(): FolderStatus | null {
   const status = route.query.folderStatus
 
-  return status === 'deleted' || status === 'all' ? status : 'active'
+  return status === 'active' || status === 'deleted' || status === 'all'
+    ? status
+    : null
+}
+
+function restoreLibraryFilters(): void {
+  const stored = readWriterPreference(LIBRARY_FILTERS_KEY)
+
+  if (!isRecord(stored)) return
+
+  if (!getRouteFolderStatus() && isStatusFilter(stored.folderStatus)) {
+    folderStatus.value = stored.folderStatus
+  }
+
+  if (isStatusFilter(stored.articleStatus)) {
+    articleStatus.value = stored.articleStatus
+  }
+
+  if (isArticleSort(stored.articleSort)) {
+    articleSort.value = stored.articleSort
+  }
+}
+
+function persistLibraryFilters(): void {
+  writeWriterPreference(LIBRARY_FILTERS_KEY, {
+    folderStatus: folderStatus.value,
+    articleStatus: articleStatus.value,
+    articleSort: articleSort.value,
+  })
+}
+
+async function restoreLastOpenedArticle(): Promise<void> {
+  // A direct folder/article URL always wins over the saved location.
+  if (selectedFolderId.value || selectedArticleId.value) return
+
+  const stored = readWriterPreference(LAST_OPENED_ARTICLE_KEY)
+
+  if (
+    !isRecord(stored) ||
+    !isStoredId(stored.folderId) ||
+    !isStoredId(stored.articleId)
+  ) {
+    return
+  }
+
+  await setRoute(
+    {
+      folder: stored.folderId,
+      article: stored.articleId,
+      view: 'editor',
+    },
+    true,
+  )
+}
+
+function rememberLastOpenedArticle(opened: ArticleRecord): void {
+  writeWriterPreference(LAST_OPENED_ARTICLE_KEY, {
+    folderId: opened.folderId,
+    articleId: opened.id,
+  })
+}
+
+function forgetLastOpenedArticle(expected: {
+  folderId?: string
+  articleId?: string
+}): void {
+  const stored = readWriterPreference(LAST_OPENED_ARTICLE_KEY)
+
+  if (!isRecord(stored)) return
+  if (expected.folderId && stored.folderId !== expected.folderId) return
+  if (expected.articleId && stored.articleId !== expected.articleId) return
+
+  clearWriterPreference(LAST_OPENED_ARTICLE_KEY)
+}
+
+function isStoredId(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 200
+}
+
+function isStatusFilter(value: unknown): value is FolderStatus {
+  return value === 'active' || value === 'deleted' || value === 'all'
+}
+
+function isArticleSort(value: unknown): value is ArticleSort {
+  return (
+    value === 'rank' ||
+    value === 'updated' ||
+    value === 'created' ||
+    value === 'title' ||
+    value === 'count'
+  )
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
 }
 
 async function loadFolders(selectFirst = false) {
@@ -116,6 +232,99 @@ async function loadFolders(selectFirst = false) {
     pageError.value = apiErrorMessage(error, 'Folders could not be loaded.')
   } finally {
     if (requestId === folderRequestId) foldersLoading.value = false
+  }
+}
+
+async function loadInitialLibrary() {
+  const requestedFolderId = selectedFolderId.value
+  const requestedArticleId = selectedArticleId.value
+  const requestedPath = route.fullPath
+
+  foldersLoading.value = true
+  articlesLoading.value = Boolean(requestedFolderId)
+  articleLoading.value = Boolean(requestedArticleId)
+  pageError.value = ''
+
+  try {
+    const response = await $fetch<LibraryResponse>('/api/library', {
+      query: {
+        page: 1,
+        pageSize: 100,
+        folderStatus: folderStatus.value,
+        articleStatus: articleStatus.value,
+        sort: articleSort.value,
+        folderId: requestedFolderId ?? undefined,
+        articleId: requestedArticleId ?? undefined,
+      },
+    })
+
+    folders.value = response.folders
+    activeFolders.value = response.activeFolders
+    folderStatus.value = response.folderStatus
+    articles.value = response.items
+    pagination.value = response.pagination
+    article.value = response.article
+
+    if (response.article) {
+      rememberLastOpenedArticle(response.article)
+    } else if (requestedArticleId) {
+      forgetLastOpenedArticle({ articleId: requestedArticleId })
+      pageError.value = 'The previously opened article is no longer available.'
+    }
+
+    const availableFolderIds = new Set(
+      [...response.folders, ...response.activeFolders].map(
+        (folder) => folder.id,
+      ),
+    )
+
+    if (requestedFolderId && !availableFolderIds.has(requestedFolderId)) {
+      forgetLastOpenedArticle({ folderId: requestedFolderId })
+    }
+
+    const routeValues: {
+      folder?: string
+      article?: string
+      view?: 'folders' | 'articles' | 'editor'
+    } = {}
+
+    if (response.selectedFolderId !== selectedFolderId.value) {
+      routeValues.folder = response.selectedFolderId ?? undefined
+    }
+
+    if (requestedArticleId && !response.article) {
+      routeValues.article = undefined
+      routeValues.view = response.selectedFolderId ? 'articles' : 'folders'
+    } else if (response.article) {
+      routeValues.folder = response.article.folderId
+      routeValues.article = response.article.id
+    }
+
+    if (Object.keys(routeValues).length > 0) {
+      await setRoute(routeValues, true)
+    }
+
+    restoreScroll('articles')
+  } catch (error) {
+    if (apiErrorStatusCode(error) === 401) {
+      try {
+        await clearSession()
+      } catch {
+        // The API response already invalidated the server-side session.
+      }
+
+      await navigateTo(
+        { path: '/login', query: { redirect: requestedPath } },
+        { replace: true },
+      )
+      return
+    }
+
+    pageError.value = apiErrorMessage(error, 'The Library could not be loaded.')
+  } finally {
+    foldersLoading.value = false
+    articlesLoading.value = false
+    articleLoading.value = false
   }
 }
 
@@ -180,6 +389,7 @@ async function loadArticle() {
     if (requestId !== articleDetailRequestId) return
 
     article.value = response.article
+    rememberLastOpenedArticle(response.article)
   } catch (error) {
     if (requestId !== articleDetailRequestId) return
 
@@ -197,6 +407,17 @@ async function loadArticle() {
           { path: '/login', query: { redirect: requestedPath } },
           { replace: true },
         )
+      }
+      return
+    }
+
+    if (apiErrorStatusCode(error) === 404) {
+      forgetLastOpenedArticle({ articleId: requestedArticleId })
+
+      if (requestId === articleDetailRequestId) {
+        await setRoute({ article: undefined, view: 'articles' }, true)
+        pageError.value =
+          'The previously opened article is no longer available.'
       }
       return
     }
@@ -316,6 +537,7 @@ async function createArticle() {
 
 async function handleArticleSaved(saved: ArticleRecord) {
   article.value = saved
+  rememberLastOpenedArticle(saved)
   if (saved.folderId !== selectedFolderId.value) {
     await setRoute(
       { folder: saved.folderId, article: saved.id, view: 'editor' },
@@ -344,6 +566,7 @@ async function changeArticleStatus(value: ArticleStatus) {
 }
 
 async function changeSort(value: string) {
+  if (!isArticleSort(value)) return
   articleSort.value = value
   cancelArticleSearchTimer()
   await loadArticles(1)
@@ -381,31 +604,29 @@ function restoreScroll(name: string) {
 }
 
 watch(selectedFolderId, () => {
+  if (initializingLibrary) return
   articleSearch.value = ''
   cancelArticleSearchTimer()
   void loadArticles(1)
 })
-watch(selectedArticleId, () => void loadArticle())
+watch(selectedArticleId, () => {
+  if (!initializingLibrary) void loadArticle()
+})
+watch([folderStatus, articleStatus, articleSort], persistLibraryFilters)
 
 onBeforeUnmount(cancelArticleSearchTimer)
 
 onMounted(async () => {
-  const hasFolderRoute = Boolean(selectedFolderId.value)
+  try {
+    restoreLibraryFilters()
+    await restoreLastOpenedArticle()
+    const hasFolderRoute = Boolean(selectedFolderId.value)
 
-  await loadFolders(true)
-
-  if (
-    selectedFolderId.value &&
-    !selectedFolder.value &&
-    folderStatus.value === 'active'
-  ) {
-    folderStatus.value = 'all'
-    await loadFolders()
+    await loadInitialLibrary()
+    if (!hasFolderRoute) restoreScroll('folders')
+  } finally {
+    initializingLibrary = false
   }
-
-  if (selectedFolderId.value) await loadArticles(1)
-  if (selectedArticleId.value) await loadArticle()
-  if (!hasFolderRoute) restoreScroll('folders')
 })
 </script>
 

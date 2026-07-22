@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { apiErrorMessage } from '~/utils/writer'
+import {
+  apiErrorMessage,
+  readWriterPreference,
+  writeWriterPreference,
+} from '~/utils/writer'
+
+const STATS_FILTERS_KEY = 'writer:filters:stats:v1'
 
 interface DailyPoint {
   date: string
@@ -22,6 +28,8 @@ interface StatsResponse {
 
 useHead({ title: 'Stats · Writer Archive' })
 
+const route = useRoute()
+const router = useRouter()
 const stats = ref<StatsResponse | null>(null)
 const loading = ref(true)
 const errorMessage = ref('')
@@ -37,6 +45,16 @@ async function loadStats() {
     stats.value = await $fetch<StatsResponse>('/api/stats/daily', {
       query: { ...(from.value ? { from: from.value } : {}), ...(to.value ? { to: to.value } : {}) },
     })
+    writeWriterPreference(STATS_FILTERS_KEY, {
+      from: from.value,
+      to: to.value,
+    })
+    await router.replace({
+      query: {
+        ...(from.value ? { from: from.value } : {}),
+        ...(to.value ? { to: to.value } : {}),
+      },
+    })
   } catch (error) {
     errorMessage.value = apiErrorMessage(error, 'Writing statistics could not be loaded.')
   } finally {
@@ -44,7 +62,31 @@ async function loadStats() {
   }
 }
 
-onMounted(loadStats)
+function restoreStatsFilters(): void {
+  const stored = readWriterPreference(STATS_FILTERS_KEY)
+  const storedRecord =
+    stored && typeof stored === 'object'
+      ? (stored as Record<string, unknown>)
+      : null
+  const routeFrom = validDateFilter(route.query.from)
+  const routeTo = validDateFilter(route.query.to)
+  const storedFrom = validDateFilter(storedRecord?.from)
+  const storedTo = validDateFilter(storedRecord?.to)
+
+  from.value = routeFrom ?? storedFrom ?? ''
+  to.value = routeTo ?? storedTo ?? ''
+}
+
+function validDateFilter(value: unknown): string | null {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/u.test(value)
+    ? value
+    : null
+}
+
+onMounted(() => {
+  restoreStatsFilters()
+  void loadStats()
+})
 </script>
 
 <template>

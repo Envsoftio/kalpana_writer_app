@@ -71,3 +71,36 @@ export function apiErrorStatusCode(error: unknown): number | null {
 
   return null
 }
+
+/** Reads a JSON preference without letting unavailable/corrupt storage break UI. */
+export function readWriterPreference(key: string): unknown {
+  if (!import.meta.client) return undefined
+
+  try {
+    const stored = window.localStorage.getItem(key)
+    return stored === null ? undefined : JSON.parse(stored)
+  } catch {
+    return undefined
+  }
+}
+
+/** Persists non-sensitive UI preferences in this browser. */
+export function writeWriterPreference(key: string, value: unknown): void {
+  if (!import.meta.client) return
+
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    // Storage may be unavailable in private or locked-down browser contexts.
+  }
+}
+
+export function clearWriterPreference(key: string): void {
+  if (!import.meta.client) return
+
+  try {
+    window.localStorage.removeItem(key)
+  } catch {
+    // Keep navigation working even when browser storage is unavailable.
+  }
+}

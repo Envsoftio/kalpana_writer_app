@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import type { Pagination } from '#shared/types/writer'
-import { apiErrorMessage, formatWriterDate, isDeleted } from '~/utils/writer'
+import {
+  apiErrorMessage,
+  formatWriterDate,
+  isDeleted,
+  readWriterPreference,
+  writeWriterPreference,
+} from '~/utils/writer'
+
+const SEARCH_FILTERS_KEY = 'writer:filters:search:v1'
 
 interface SearchResult {
   id: string
@@ -8,9 +16,15 @@ interface SearchResult {
   folderName?: string
   title: string
   excerpt: string
+  matchSource: 'title' | 'content' | 'title-and-content'
   count: number | null
   updateTime: number
   deleted: number | boolean
+}
+
+function matchSourceLabel(item: SearchResult): string {
+  if (item.matchSource === 'title-and-content') return 'Title + content'
+  return item.matchSource === 'content' ? 'Content match' : 'Title match'
 }
 
 useHead({ title: 'Search · Writer Archive' })
@@ -59,6 +73,10 @@ async function search(page = 1) {
     items.value = response.items
     pagination.value = response.pagination
     searched.value = true
+    writeWriterPreference(SEARCH_FILTERS_KEY, {
+      query: normalized,
+      includeDeleted: includeDeleted.value,
+    })
   } catch (error) {
     errorMessage.value = apiErrorMessage(
       error,
@@ -66,6 +84,28 @@ async function search(page = 1) {
     )
   } finally {
     loading.value = false
+  }
+}
+
+function restoreSearchFilters(): void {
+  const stored = readWriterPreference(SEARCH_FILTERS_KEY)
+
+  if (!stored || typeof stored !== 'object') return
+
+  if (
+    !(typeof route.query.q === 'string' && route.query.q.trim()) &&
+    'query' in stored &&
+    typeof stored.query === 'string'
+  ) {
+    query.value = stored.query
+  }
+
+  if (
+    route.query.deleted === undefined &&
+    'includeDeleted' in stored &&
+    typeof stored.includeDeleted === 'boolean'
+  ) {
+    includeDeleted.value = stored.includeDeleted
   }
 }
 
@@ -82,6 +122,7 @@ function articleLink(item: SearchResult) {
 }
 
 onMounted(() => {
+  restoreSearchFilters()
   if (query.value.trim()) void search()
 })
 </script>
@@ -162,6 +203,9 @@ onMounted(() => {
             size="sm"
             >Deleted</UBadge
           >
+          <UBadge color="neutral" variant="subtle" size="sm">
+            {{ matchSourceLabel(item) }}
+          </UBadge>
         </span>
         <strong>{{ item.title || 'Untitled' }}</strong>
         <p>{{ item.excerpt }}</p>

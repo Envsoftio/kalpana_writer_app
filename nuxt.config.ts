@@ -19,6 +19,15 @@ export default defineNuxtConfig({
     tursoDatabaseUrl: '',
     tursoAuthToken: '',
     adminEmail: '',
+    session: {
+      password: '',
+      // Keep access sessions short-lived. The server transparently renews
+      // them from the longer-lived, revocable refresh token.
+      maxAge: 60 * 60,
+      cookie: {
+        sameSite: 'lax',
+      },
+    },
     public: {},
   },
   typescript: {

@@ -16,7 +16,12 @@ export const writerTables = [
   'room_master_table',
 ]
 
-export const appTables = ['app_user', 'app_audit_log', 'app_export_job']
+export const appTables = [
+  'app_user',
+  'app_refresh_token',
+  'app_audit_log',
+  'app_export_job',
+]
 export const ignoredSourceTables = ['android_metadata', 'License', 'Shortcut']
 
 export const keyTableCounts = {
