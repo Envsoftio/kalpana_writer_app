@@ -4,8 +4,8 @@ import type { H3Event } from 'h3'
 
 export const ADMIN_USER_ID = 'admin' as const
 export const ADMIN_REFRESH_COOKIE_NAME = 'writer-refresh-token'
+export const REFRESH_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 90
 
-const REFRESH_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 90
 const REFRESH_TOKEN_RETENTION_MS = 60 * 60 * 24 * 7 * 1000
 let refreshTokenSchemaPromise: Promise<void> | undefined
 
