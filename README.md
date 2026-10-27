@@ -145,7 +145,7 @@ Private Turso values live only in Nuxt's private runtime config or the server pr
 - Global title/content search that returns excerpts instead of full article bodies.
 - Daily writing totals, date range, and top folders.
 - A read-only, allowlisted table explorer with truncated grid cells, protected full-row detail, and credential-field redaction.
-- Full TXT ZIP, portable SQLite `.db`, single-folder ZIP, and single-article TXT exports with stable ordering and reconstruction metadata.
+- Full TXT ZIP, portable SQLite `.db`, single-folder ZIP, single-article TXT, and per-story Word `.docx` exports with all or selected episodes.
 
 All API routes except login and session discovery require the sealed admin session. Expired access sessions are transparently renewed from the HttpOnly refresh cookie; logout or an admin password change invalidates renewal. There is intentionally no signup endpoint.
 
@@ -153,7 +153,7 @@ All API routes except login and session discovery require the sealed admin sessi
 
 Run the deterministic export checks with `npm run validate:export`.
 
-The source backup is larger than a Netlify Function response. Full TXT and SQLite backups are assembled incrementally in the authenticated browser from bounded data pages. SQLite generation uses the packaged `sql.js` WebAssembly build and produces a genuine `.db` file without exposing Turso credentials. Single-article and normal single-folder exports remain separate downloads.
+The source backup is larger than a Netlify Function response. Full TXT and SQLite backups are assembled incrementally in the authenticated browser from bounded data pages. SQLite generation uses the packaged `sql.js` WebAssembly build and produces a genuine `.db` file without exposing Turso credentials. Single-article and normal single-folder exports remain separate downloads. In the Library, open a story and use **Word** to export all its episodes or choose individual episodes. Large Word documents are assembled in the browser from bounded authenticated batches.
 
 ## Deployment
 

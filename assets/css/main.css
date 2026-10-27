@@ -403,6 +403,120 @@ button:disabled,
   justify-content: flex-end;
 }
 
+.word-export-dialog {
+  position: fixed;
+  width: min(680px, calc(100vw - 24px));
+  max-height: min(760px, calc(100dvh - 24px));
+  margin: auto;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 0.24);
+  padding: 22px;
+}
+
+.word-export-dialog::backdrop {
+  background: rgb(0 0 0 / 0.55);
+}
+
+.word-export-heading,
+.word-export-footer,
+.word-export-selection-tools,
+.word-export-modes {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.word-export-heading {
+  justify-content: space-between;
+}
+
+.word-export-heading h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.word-export-intro {
+  margin: 12px 0 18px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.word-export-deleted {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.word-export-modes {
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+
+.word-export-modes label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.word-export-selection-tools {
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.word-export-selection-tools > :first-child {
+  flex: 1 1 180px;
+}
+
+.word-export-list {
+  max-height: min(350px, 42dvh);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.word-export-episode {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-bottom: 1px solid var(--border);
+  padding: 9px 12px;
+  font-size: 13px;
+}
+
+.word-export-episode:last-child {
+  border-bottom: 0;
+}
+
+.word-export-episode span {
+  flex: 1;
+}
+
+.word-export-empty {
+  padding: 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.word-export-footer {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+
+.word-export-footer > span {
+  flex: 1;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .pane-state,
 .large-state {
   display: flex;

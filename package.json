@@ -16,8 +16,9 @@
     "preview": "nuxt preview",
     "typecheck": "nuxt typecheck",
     "validate:export": "node --experimental-strip-types scripts/validate-export.mjs",
+    "validate:docx": "node --experimental-strip-types scripts/validate-docx.mjs",
     "validate:ui-utils": "node --experimental-strip-types scripts/validate-ui-utils.mjs",
-    "verify": "npm run lint && npm run typecheck && npm run validate:ui-utils && npm run validate:export && npm run build"
+    "verify": "npm run lint && npm run typecheck && npm run validate:ui-utils && npm run validate:export && npm run validate:docx && npm run build"
   },
   "dependencies": {
     "@libsql/client": "^0.17.4",

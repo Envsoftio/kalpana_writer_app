@@ -55,6 +55,7 @@ const foldersLoading = ref(true)
 const articlesLoading = ref(false)
 const articleLoading = ref(false)
 const pageError = ref('')
+const wordExportOpen = ref(false)
 let articleSearchTimer: ReturnType<typeof setTimeout> | undefined
 let folderRequestId = 0
 let articleRequestId = 0
@@ -688,6 +689,7 @@ onMounted(async () => {
         @back="setRoute({ view: 'folders' })"
         @select="selectArticle"
         @create="createArticle"
+        @export-word="wordExportOpen = true"
         @status="changeArticleStatus"
         @sort="changeSort"
         @search="changeArticleSearch"
@@ -704,5 +706,10 @@ onMounted(async () => {
         @removed="handleArticleDeleted"
       />
     </div>
+    <StoryWordExport
+      :open="wordExportOpen"
+      :folder="selectedFolder"
+      @close="wordExportOpen = false"
+    />
   </div>
 </template>

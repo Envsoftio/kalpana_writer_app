@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import type { ArticleSummary, FolderRecord, Pagination } from '#shared/types/writer'
+import type {
+  ArticleSummary,
+  FolderRecord,
+  Pagination,
+} from '#shared/types/writer'
 import { formatWriterDate, isDeleted } from '~/utils/writer'
 
 const props = defineProps<{
@@ -17,6 +21,7 @@ const emit = defineEmits<{
   back: []
   select: [article: ArticleSummary]
   create: []
+  exportWord: []
   status: [value: 'active' | 'deleted' | 'all']
   sort: [value: string]
   search: [value: string]
@@ -53,6 +58,16 @@ const sortOptions = [
         <h1 class="truncate">{{ folder?.name ?? 'Choose a folder' }}</h1>
       </div>
       <UButton
+        icon="i-lucide-file-down"
+        label="Word"
+        color="neutral"
+        variant="soft"
+        size="sm"
+        :disabled="!folder"
+        aria-label="Export story to Word"
+        @click="emit('exportWord')"
+      />
+      <UButton
         icon="i-lucide-file-plus-2"
         size="sm"
         :disabled="!folder"
@@ -79,7 +94,11 @@ const sortOptions = [
         aria-label="Sort articles"
         @change="emit('sort', ($event.target as HTMLSelectElement).value)"
       >
-        <option v-for="option in sortOptions" :key="option.value" :value="option.value">
+        <option
+          v-for="option in sortOptions"
+          :key="option.value"
+          :value="option.value"
+        >
           {{ option.label }}
         </option>
       </select>
@@ -87,7 +106,13 @@ const sortOptions = [
         :value="status"
         class="native-select"
         aria-label="Article status"
-        @change="emit('status', ($event.target as HTMLSelectElement).value as 'active' | 'deleted' | 'all')"
+        @change="
+          emit(
+            'status',
+            ($event.target as HTMLSelectElement).value as
+              'active' | 'deleted' | 'all',
+          )
+        "
       >
         <option value="active">Active</option>
         <option value="deleted">Deleted</option>
@@ -104,8 +129,12 @@ const sortOptions = [
       Loading articles…
     </div>
     <div v-else-if="articles.length === 0" class="pane-state grow">
-      <UIcon :name="search.trim() ? 'i-lucide-search-x' : 'i-lucide-file-text'" />
-      <span v-if="search.trim()">No article titles match “{{ search.trim() }}”.</span>
+      <UIcon
+        :name="search.trim() ? 'i-lucide-search-x' : 'i-lucide-file-text'"
+      />
+      <span v-if="search.trim()"
+        >No article titles match “{{ search.trim() }}”.</span
+      >
       <span v-else>No articles match this filter.</span>
     </div>
 
@@ -121,9 +150,17 @@ const sortOptions = [
           {{ article.title || 'Untitled' }}
           <span v-if="article.id === selectedId" class="active-dot" />
         </span>
-        <span class="row-excerpt">{{ article.summary || article.excerpt || 'No preview available' }}</span>
+        <span class="row-excerpt">{{
+          article.summary || article.excerpt || 'No preview available'
+        }}</span>
         <span class="row-meta">
-          <UBadge v-if="isDeleted(article.deleted)" color="error" variant="subtle" size="sm">Deleted</UBadge>
+          <UBadge
+            v-if="isDeleted(article.deleted)"
+            color="error"
+            variant="subtle"
+            size="sm"
+            >Deleted</UBadge
+          >
           <span>{{ Number(article.count ?? 0).toLocaleString() }} words</span>
           <span>·</span>
           <span>{{ formatWriterDate(article.updateTime) }}</span>
